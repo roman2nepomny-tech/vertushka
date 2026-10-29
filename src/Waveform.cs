@@ -69,7 +69,7 @@ public static class WaveformCache
     });
 
     // пики для куска трека [start, start+len) с bins столбиками — для приближённой волны
-    public static float[] Window(string file, double start, double len, int bins = 1000)
+    public static float[] Window(string file, double start, double len, int bins = 1000, CancellationToken ct = default)
     {
         try
         {
@@ -86,6 +86,7 @@ public static class WaveformCache
                 int want = (int)Math.Min(4096, frames - fi);
                 int n = r.Read(buf, 0, want * ch);
                 if (n <= 0) break;
+                ct.ThrowIfCancellationRequested();
                 int got = n / ch;
                 for (int f = 0; f < got; f++, fi++)
                 {
@@ -100,7 +101,7 @@ public static class WaveformCache
             for (int i = 0; i < bins; i++) peaks[i] = (float)Math.Pow(Math.Min(1f, peaks[i] / refv), 0.8);
             return peaks;
         }
-        catch { return null; }
+        catch { return null; } // в том числе отмена запроса
     }
 
     static float[] Compute(string file)
@@ -349,9 +350,9 @@ public class WaveformControl : FrameworkElement
             var ft = Text("считаем волну…", 15, Rest);
             dc.DrawText(ft, new Point(Math.Max(8, (w - ft.Width) / 2), mid - ft.Height / 2));
         }
-        if (loopA >= 0 && loopB > loopA)
+        if (loopA >= 0 && loopB > loopA && Played is SolidColorBrush pb)
         {
-            var lp = new SolidColorBrush(Color.FromArgb(0x55, ((SolidColorBrush)Played).Color.R, ((SolidColorBrush)Played).Color.G, ((SolidColorBrush)Played).Color.B));
+            var lp = new SolidColorBrush(Color.FromArgb(0x55, pb.Color.R, pb.Color.G, pb.Color.B));
             dc.DrawRoundedRectangle(lp, new Pen(Played, 1.5), new Rect(loopA * w, 0, Math.Max(3, (loopB - loopA) * w), H), 6, 6);
         }
         // обрезка: затемняем всё вне меток «начало» и «конец», между ними подсвечиваем

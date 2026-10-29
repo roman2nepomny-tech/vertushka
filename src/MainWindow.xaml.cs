@@ -1039,8 +1039,9 @@ public partial class MainWindow : Window
                 else old.Dispose();
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            App.LogCrash("Start", ex);
             if (ns != cur) ns?.Dispose();
             SetStatus($"Не удалось включить «{s.Name}». Проверьте файл и звуковое устройство");
             return false;
@@ -1222,7 +1223,7 @@ public partial class MainWindow : Window
             else if (c.Ended)
             {
                 // отключили устройство — стоим и говорим об этом; иначе трек закончился (даже если файл короче, чем написано в заголовке) — идём дальше
-                if (c.StopError != null) { StopAll(); SetStatus("Звук остановился: проверьте наушники и устройство вывода"); }
+                if (c.StopError != null) { App.LogCrash("Stop", c.StopError); StopAll(); SetStatus("Звук остановился: проверьте наушники и устройство вывода"); }
                 else if (HasNextTrack) Next(false);
                 else StopAll();
             }
@@ -1873,7 +1874,6 @@ public partial class MainWindow : Window
     int zoomIdx = 2;
     double zoomStart, zoomWinLen = -1;
     bool zoomUser;   // игла поставлена пальцем/мышью: окно не переезжает само
-    int zoomReq;
 
     void ZoomIn_Click(object sender, RoutedEventArgs e) => ZoomStep(1);
     void ZoomOut_Click(object sender, RoutedEventArgs e) => ZoomStep(-1);
@@ -1895,8 +1895,9 @@ public partial class MainWindow : Window
         double tot = cur.Reader.TotalTime.TotalSeconds;
         double W = Math.Min(ZoomLevels[zoomIdx], Math.Max(1.5, tot));
         bool playing = cur.Out.PlaybackState == PlaybackState.Playing;
+        bool atEnd = zoomStart >= tot - W - 0.001; // окно уже упёрлось в конец трека: дальше двигать некуда (иначе пересчёт каждый такт)
         bool recentre = zoomWinLen < 0 || zoomWinLen != W || pos < zoomStart - 0.001 || pos > zoomStart + W
-                        || (!zoomUser && playing && pos > zoomStart + W * 0.85);
+                        || (!zoomUser && playing && !atEnd && pos > zoomStart + W * 0.85);
         if (recentre)
         {
             zoomStart = Math.Clamp(pos - W * 0.35, 0, Math.Max(0, tot - W)); // игла левее центра: больше видно вперёд
@@ -1908,22 +1909,37 @@ public partial class MainWindow : Window
         ZoomWave.TimeOffset = zoomStart;
         ZoomWave.FadeSeconds = 0;
         if (!ZoomWave.Dragging) ZoomWave.Progress = Math.Clamp((pos - zoomStart) / W, 0, 1);
-        ZoomWave.Cues = cueSec.Select(c => c < 0 || c < zoomStart || c > zoomStart + W ? -1.0 : c - zoomStart).ToArray();
+        var zc = cueSec.Select(c => c < 0 || c < zoomStart || c > zoomStart + W ? -1.0 : c - zoomStart).ToArray();
+        if (ZoomWave.Cues == null || !ZoomWave.Cues.SequenceEqual(zc)) ZoomWave.Cues = zc; // без лишней перерисовки каждый такт
         double a = cur.TrimStart < 0 || cur.TrimStart < zoomStart ? -1 : Math.Min(W, cur.TrimStart - zoomStart);
         double b = cur.TrimEnd <= 0 || cur.TrimEnd > zoomStart + W ? -1 : Math.Max(0.001, cur.TrimEnd - zoomStart);
         ZoomWave.SetTrim(a, b, true);
     }
 
+    CancellationTokenSource zoomCts;
+    string zoomCachePath; double zoomCacheStart = -1, zoomCacheLen; float[] zoomCache;
+
+    // пики окна считаются в одном фоновом запросе; новый запрос отменяет прежний, уже посчитанное окно берётся из памяти
     async void RequestZoomPeaks(double start, double len)
     {
         var slot = cur;
         if (slot == null) return;
-        int id = ++zoomReq;
         string path = slot.Song.Path;
+        zoomCts?.Cancel();
+        if (zoomCache != null && zoomCachePath == path && Math.Abs(zoomCacheStart - start) < 0.01 && Math.Abs(zoomCacheLen - len) < 0.01)
+        {
+            ZoomWave.Peaks = zoomCache; ZoomWave.Loading = false;
+            return;
+        }
+        var cts = zoomCts = new CancellationTokenSource();
         ZoomWave.Loading = true;
         ZoomWave.Peaks = null; // старые пики не показываем под новым окном
-        var peaks = await Task.Run(() => WaveformCache.Window(path, start, len));
-        if (id != zoomReq || cur != slot) return;
+        float[] peaks;
+        try { peaks = await Task.Run(() => WaveformCache.Window(path, start, len, 1000, cts.Token), cts.Token); }
+        catch (Exception) { return; }
+        if (cts.IsCancellationRequested) return;
+        if (cur != slot) { ZoomWave.Loading = false; return; }
+        if (peaks != null) { zoomCachePath = path; zoomCacheStart = start; zoomCacheLen = len; zoomCache = peaks; }
         ZoomWave.Peaks = peaks;
         ZoomWave.Loading = false;
     }

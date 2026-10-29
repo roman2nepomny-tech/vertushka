@@ -41,32 +41,25 @@ public class Slot : IDisposable
     public void Seek(TimeSpan t) { lock (gate) Reader.CurrentTime = t; }
 
     // перемотка в «чистое» начало (метка «Начало» обрезки, «назад»): после прыжка декодер (особенно mp3) сначала выдаёт мусор,
-    // поэтому читаем и выбрасываем кусочек звука перед нужным местом, а сам звук нарастает за 30 мс — без щелчка и шума
+    // поэтому звуковой поток читает и выбрасывает кусочек звука перед нужным местом, а сам звук нарастает за 30 мс — без щелчка и шума.
+    // Само чтение делает только звуковой поток: mp3 читает Media Foundation, а он работает с файлом лишь из того потока, где идёт чтение
+    // (перемотка и чтение из окна роняли программу: InvalidCastException на IMFSourceReader).
     public void SeekClean(double sec)
     {
         sec = Math.Max(0, sec);
         lock (gate)
         {
-            double pre = Math.Min(sec, 0.3);
-            Reader.CurrentTime = TimeSpan.FromSeconds(sec - pre);
-            int align = Reader.WaveFormat.BlockAlign;
-            int left = (int)(pre * Reader.WaveFormat.AverageBytesPerSecond);
-            left -= left % align;
-            var buf = new byte[Math.Max(align, Math.Min(left, 1 << 18))];
-            while (left > 0)
-            {
-                int n = Reader.Read(buf, 0, Math.Min(buf.Length, left));
-                if (n <= 0) break;
-                left -= n;
-            }
+            Reader.CurrentTime = TimeSpan.FromSeconds(sec);
+            locked.PreRoll = Math.Min(sec, 0.3);
+            locked.ArmRamp((int)(0.03 * Reader.WaveFormat.SampleRate));
         }
-        locked.ArmRamp((int)(0.03 * Reader.WaveFormat.SampleRate));
     }
 
     sealed class LockedWave : IWaveProvider
     {
         readonly IWaveProvider src; readonly object gate;
         int rampTotal, rampDone; // кадры плавного нарастания громкости после перемотки
+        public double PreRoll;   // секунд звука перед местом перемотки, которые надо прочитать и выбросить (под замком)
         public LockedWave(IWaveProvider src, object gate) { this.src = src; this.gate = gate; }
         public WaveFormat WaveFormat => src.WaveFormat;
 
@@ -76,6 +69,25 @@ public class Slot : IDisposable
         {
             lock (gate)
             {
+                if (PreRoll > 0 && src is AudioFileReader ar)
+                {
+                    double pre = PreRoll; PreRoll = 0;
+                    try
+                    {
+                        ar.CurrentTime = ar.CurrentTime - TimeSpan.FromSeconds(pre);
+                        int align = ar.WaveFormat.BlockAlign;
+                        int left = (int)(pre * ar.WaveFormat.AverageBytesPerSecond);
+                        left -= left % align;
+                        var tmp = new byte[Math.Max(align, Math.Min(left, 1 << 18))];
+                        while (left > 0)
+                        {
+                            int k = ar.Read(tmp, 0, Math.Min(tmp.Length, left));
+                            if (k <= 0) break;
+                            left -= k;
+                        }
+                    }
+                    catch (Exception) { } // не вышло — играем с места перемотки как есть
+                }
                 int n = src.Read(buffer, offset, count);
                 if (n > 0 && rampDone < rampTotal && src.WaveFormat.Encoding == WaveFormatEncoding.IeeeFloat && src.WaveFormat.BitsPerSample == 32)
                 {
