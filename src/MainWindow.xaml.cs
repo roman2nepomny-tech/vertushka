@@ -1704,12 +1704,29 @@ public partial class MainWindow : Window
 
     // ---------- запись ----------
 
-    void UpdateMicLabel()
+    // номер выбранного микрофона по имени: номера сдвигаются при подключении и отключении устройств.
+    // -2 — микрофонов нет совсем, -1 — не выбран или прежний не найден: берём микрофон по умолчанию из настроек Windows
+    int MicIndex()
     {
         int n = WaveInEvent.DeviceCount;
-        if (n == 0) { MicBtn.Content = "Микрофон не найден"; return; }
-        if (cfg.Mic < 0 || cfg.Mic >= n) cfg.Mic = 0;
-        MicBtn.Content = "Микрофон: " + Short(WaveInEvent.GetCapabilities(cfg.Mic).ProductName);
+        if (n == 0) return -2;
+        if (!string.IsNullOrEmpty(cfg.MicName))
+            for (int i = 0; i < n; i++)
+                if (WaveInEvent.GetCapabilities(i).ProductName == cfg.MicName) return i;
+        return -1;
+    }
+
+    string MicName()
+    {
+        int i = MicIndex();
+        return i >= 0 ? WaveInEvent.GetCapabilities(i).ProductName : "по умолчанию (Windows)";
+    }
+
+    void UpdateMicLabel()
+    {
+        int i = MicIndex();
+        if (i == -2) { MicBtn.Content = "Микрофон не найден"; return; }
+        MicBtn.Content = "Микрофон: " + Short(MicName());
     }
 
     static string Short(string s) => s.Length > 22 ? s.Substring(0, 21) + "…" : s;
@@ -1717,15 +1734,22 @@ public partial class MainWindow : Window
     void Mic_Click(object sender, RoutedEventArgs e)
     {
         if (recording) return;
+        UpdateMicLabel(); // список устройств мог измениться с запуска программы
         var m = new ContextMenu();
+        if (WaveInEvent.DeviceCount > 0)
+        {
+            var def = new MenuItem { Header = "По умолчанию (как в Windows)", IsCheckable = true, IsChecked = MicIndex() < 0 };
+            def.Click += (a, b) => { cfg.MicName = null; cfg.Save(); UpdateMicLabel(); };
+            m.Items.Add(def);
+        }
         for (int i = 0; i < WaveInEvent.DeviceCount; i++)
         {
-            int idx = i;
-            var it = new MenuItem { Header = WaveInEvent.GetCapabilities(i).ProductName, IsCheckable = true, IsChecked = i == cfg.Mic };
-            it.Click += (a, b) => { cfg.Mic = idx; UpdateMicLabel(); };
+            string name = WaveInEvent.GetCapabilities(i).ProductName;
+            var it = new MenuItem { Header = name, IsCheckable = true, IsChecked = i == MicIndex() };
+            it.Click += (a, b) => { cfg.MicName = name; cfg.Save(); UpdateMicLabel(); };
             m.Items.Add(it);
         }
-        if (m.Items.Count == 0) { SetStatus("Микрофон не найден. Подключите его и перезапустите программу"); return; }
+        if (m.Items.Count == 0) { SetStatus("Микрофон не найден. Подключите его и нажмите кнопку ещё раз"); return; }
         m.PlacementTarget = MicBtn;
         m.Placement = PlacementMode.Top;
         m.IsOpen = true;
@@ -1743,7 +1767,9 @@ public partial class MainWindow : Window
     void StartRecording()
     {
         if (recording) return;
-        if (WaveInEvent.DeviceCount == 0) { SetStatus("Микрофон не найден"); return; }
+        UpdateMicLabel(); // микрофон могли подключить после запуска программы
+        int micDev = MicIndex();
+        if (micDev == -2) { SetStatus("Микрофон не найден: подключите его и нажмите «Запись» ещё раз"); return; }
         bool withMusic = cfg.RecMusic;
         var recBase = $"Запись {DateTime.Now:yyyy-MM-dd HH-mm-ss}";
         recPath = System.IO.Path.Combine(SectionDir(RecSection), recBase + ".wav");
@@ -1752,7 +1778,7 @@ public partial class MainWindow : Window
         {
             if (!withMusic)
             {
-                micIn = new WaveInEvent { DeviceNumber = cfg.Mic, WaveFormat = new WaveFormat(44100, 16, 1) };
+                micIn = new WaveInEvent { DeviceNumber = micDev, WaveFormat = new WaveFormat(44100, 16, 1) };
                 writer = new WaveFileWriter(recPath, micIn.WaveFormat);
                 micIn.DataAvailable += (s, a) => { lock (recLock) { try { writer?.Write(a.Buffer, 0, a.BytesRecorded); } catch { } } };
                 micIn.RecordingStopped += Rec_DeviceStopped;
@@ -1763,7 +1789,7 @@ public partial class MainWindow : Window
                 loop = new WasapiLoopbackCapture();
                 var lf = loop.WaveFormat;
                 if (lf.Channels > 2) throw new InvalidOperationException("surround");
-                micIn = new WaveInEvent { DeviceNumber = cfg.Mic, WaveFormat = new WaveFormat(lf.SampleRate, 16, 1) };
+                micIn = new WaveInEvent { DeviceNumber = micDev, WaveFormat = new WaveFormat(lf.SampleRate, 16, 1) };
                 loopBuf = new BufferedWaveProvider(lf) { DiscardOnBufferOverflow = true, ReadFully = true, BufferDuration = TimeSpan.FromSeconds(5) };
                 micBuf = new BufferedWaveProvider(micIn.WaveFormat) { DiscardOnBufferOverflow = true, ReadFully = true, BufferDuration = TimeSpan.FromSeconds(5) };
                 ISampleProvider music = loopBuf.ToSampleProvider();
@@ -1812,7 +1838,7 @@ public partial class MainWindow : Window
         if (!withMusic) recWatch = System.Diagnostics.Stopwatch.StartNew();
         MusicTgl.IsEnabled = false; MicBtn.IsEnabled = false;
         RecBtn.Background = (Brush)FindResource("Rec"); RecBtn.Foreground = Brushes.White;
-        SetStatus(withMusic ? "Идёт запись: голос и музыка" : "Идёт запись: только микрофон");
+        SetStatus((withMusic ? "Идёт запись: голос и музыка" : "Идёт запись: только микрофон") + " · " + Short(MicName()));
     }
 
     void CleanupRecording()

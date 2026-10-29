@@ -11,7 +11,8 @@ public class Settings
     public bool FadeEnabled { get; set; } = true;
     public int FadeVersion { get; set; }
     public bool Topmost { get; set; } = true;
-    public int Mic { get; set; } = 0;
+    public int Mic { get; set; } = 0; // устарело: номер микрофона (сдвигается при подключении устройств), теперь хранится имя
+    public string MicName { get; set; } // выбранный микрофон по имени; пусто — по умолчанию в Windows
     public bool RecMusic { get; set; } = false;
     public string LastSection { get; set; }
     public string Event { get; set; }
