@@ -2054,7 +2054,16 @@ public partial class MainWindow : Window
         ZoomWave.Loading = true;
         ZoomWave.Peaks = null; // старые пики не показываем под новым окном
         float[] peaks;
-        try { peaks = await Task.Run(() => WaveformCache.Window(path, start, len, 1000, cts.Token), cts.Token); }
+        try
+        {
+            peaks = await Task.Run(() => WaveformCache.Window(path, start, len, 1000, cts.Token), cts.Token);
+            if (peaks == null && !cts.IsCancellationRequested) // не вышло с первого раза (файл занят): ещё одна попытка
+            {
+                await Task.Delay(300, cts.Token);
+                peaks = await Task.Run(() => WaveformCache.Window(path, start, len, 1000, cts.Token), cts.Token);
+                if (peaks == null && !cts.IsCancellationRequested) App.LogCrash("ZoomPeaks", new Exception($"окно волны не посчиталось: {path} {start:0.0}+{len:0.0}"));
+            }
+        }
         catch (Exception) { return; }
         if (cts.IsCancellationRequested) return;
         if (cur != slot) { ZoomWave.Loading = false; return; }

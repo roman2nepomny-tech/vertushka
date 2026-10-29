@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows;
@@ -402,8 +402,6 @@ public class WaveformControl : FrameworkElement
         if (axis)
         {
             double amp = H / 2 - 5;
-            Label(dc, "громко", 2 - G, mid - amp - 8, Theme.Get("Muted"));
-            Label(dc, "средне", 2 - G, mid - amp * 0.5 - 8, Theme.Get("Muted"));
             if (duration > 1 && fadeSec > 0)
             {
                 var fadeLbl = $"затухание {Math.Round(Math.Min(fadeSec, duration * 0.4))} с";
@@ -438,7 +436,7 @@ public class WaveformControl : FrameworkElement
         dc.Pop();
     }
 
-    double Gutter => axis ? 58 : 0;
+    double Gutter => axis ? 8 : 0;
 
     double Frac(MouseEventArgs e) => Math.Clamp((e.GetPosition(this).X - Gutter) / Math.Max(1, ActualWidth - Gutter), 0, 1);
 
