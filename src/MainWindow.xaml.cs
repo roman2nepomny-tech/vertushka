@@ -87,13 +87,14 @@ public partial class MainWindow : Window
         SetCompact(cfg.Compact);
         SetCards(cfg.Cards);
         SetWaveStyle(!cfg.WaveBars);
-        SnapTgl.IsChecked = cfg.SnapQuiet;
         ready = true;
         LoadSections(LastSec());
         if (cfg.MiniOpen) Dispatcher.BeginInvoke(OpenMini);
         WaveformCache.Cleanup();
 
         Wave.Scrub += Wave_Scrub;
+        ZoomWave.Scrub += ZoomScrub;
+        ZoomWave.MouseWheel += (s, e) => { if (e.Delta > 0) ZoomStep(1); else ZoomStep(-1); e.Handled = true; };
         Wave.CueJump += JumpCue;
         Wave.CueRemove += RemoveCue;
         timer.Tick += (s, e) => Tick();
@@ -1178,6 +1179,7 @@ public partial class MainWindow : Window
             bool cut = !trimEdit && (c.TrimStart > 0 || c.TrimEnd > 0);
             Wave.FadeSeconds = cfg.FadeEnabled && !(!trimEdit && c.TrimEnd > 0) ? Math.Min(Crossfade, r.TotalTime.TotalSeconds * 0.4) : 0;
             if (!seeking) Wave.Progress = r.CurrentTime.TotalSeconds / Math.Max(1, r.TotalTime.TotalSeconds);
+            if (trimEdit) UpdateZoom(ePos);
             TimeText.Text = cut ? $"{Fmt(TimeSpan.FromSeconds(Math.Max(0, ePos - eStart)))} / {Fmt(TimeSpan.FromSeconds(eEnd - eStart))}" : $"{Fmt(r.CurrentTime)} / {Fmt(r.TotalTime)}";
             var left = eEnd > ePos ? TimeSpan.FromSeconds(eEnd - ePos) : TimeSpan.Zero;
             RemainText.Text = "−" + Fmt(left);
@@ -1646,7 +1648,7 @@ public partial class MainWindow : Window
     // ---------- метки на волне ----------
 
     // i = -1: первая свободная; иначе — на этот номер (поверх старой)
-    async void SetCue(int i)
+    void SetCue(int i)
     {
         if (cur == null) { SetStatus("Метка: сначала включите трек"); return; }
         if (i < 0)
@@ -1654,32 +1656,10 @@ public partial class MainWindow : Window
             i = Array.FindIndex(cueSec, v => v < 0);
             if (i < 0) { SetStatus("Все 4 метки заняты: правый клик по флажку убирает, Shift+F1…F4 — заменить"); return; }
         }
-        var slot = cur;
-        double raw = slot.Reader.CurrentTime.TotalSeconds;
-        double at = await Snap(slot.Song.Path, raw);
-        if (cur != slot) return; // за время поиска включили другой трек
-        cueSec[i] = at;
-        Cues.Save(slot.Song.Path, cueSec);
+        cueSec[i] = cur.Reader.CurrentTime.TotalSeconds;
+        Cues.Save(cur.Song.Path, cueSec);
         Wave.Cues = cueSec;
-        SetStatus($"Метка {i + 1}: {Fmt(TimeSpan.FromSeconds(at))}{SnapNote(raw, at)}");
-    }
-
-    // ближайшее самое тихое место возле секунды pos (если включено); при ошибке — сама секунда
-    async Task<double> Snap(string path, double pos)
-    {
-        if (!cfg.SnapQuiet) return pos;
-        try { return await Task.Run(() => Quiet.Find(path, pos)); }
-        catch { return pos; }
-    }
-
-    static string SnapNote(double raw, double at) =>
-        Math.Abs(at - raw) < 0.05 ? "" : $" (сдвинута в тихое место: {(at < raw ? "−" : "+")}{Math.Abs(at - raw):0.0} с)";
-
-    void Snap_Click(object sender, RoutedEventArgs e)
-    {
-        cfg.SnapQuiet = SnapTgl.IsChecked == true;
-        cfg.Save();
-        SetStatus(cfg.SnapQuiet ? "Метки будут прилипать к ближайшему тихому месту" : "Метки ставятся точно там, где нажали");
+        SetStatus($"Метка {i + 1}: {Fmt(TimeSpan.FromSeconds(cueSec[i]))}");
     }
 
     void JumpCue(int i)
@@ -1777,9 +1757,6 @@ public partial class MainWindow : Window
             phones.Items.Add(it);
         }
         m.Items.Add(phones);
-        var snap = new MenuItem { Header = "Метки к ближайшему тихому месту", IsChecked = cfg.SnapQuiet };
-        snap.Click += (a, b) => { cfg.SnapQuiet = !cfg.SnapQuiet; cfg.Save(); SnapTgl.IsChecked = cfg.SnapQuiet; SetStatus(cfg.SnapQuiet ? "Метки будут прилипать к ближайшему тихому месту" : "Метки ставятся точно там, где нажали"); };
-        m.Items.Add(snap);
         var wave = new MenuItem { Header = cfg.WaveBars ? "Волна: заливкой" : "Волна: столбиками" };
         wave.Click += (a, b) => SetWaveStyle(cfg.WaveBars);
         var top = new MenuItem { Header = "Поверх окон", IsChecked = TopTgl.IsChecked == true };
@@ -1811,20 +1788,29 @@ public partial class MainWindow : Window
         {
             Wave.SetTrim(-1, -1, false);
             TrimBar.Visibility = Visibility.Collapsed;
+            ZoomBox.Visibility = Visibility.Collapsed;
+            RightPanel.Visibility = Visibility.Visible; RightCol.Width = new GridLength(268); GapCol.Width = new GridLength(16);
             JingleRow.Visibility = Visibility.Visible;
+            NowCard.Visibility = cfg.Compact ? Visibility.Collapsed : Visibility.Visible;
             TrimBtn.Content = "Обрезка";
             return;
         }
         Wave.SetTrim(cur.TrimStart, cur.TrimEnd, trimEdit);
         TrimBar.Visibility = trimEdit ? Visibility.Visible : Visibility.Collapsed;
         JingleRow.Visibility = trimEdit ? Visibility.Collapsed : Visibility.Visible; // место под панель обрезки
+        ZoomBox.Visibility = TrimBar.Visibility;
+        RightPanel.Visibility = trimEdit ? Visibility.Collapsed : Visibility.Visible; // «Далее», петля и «Поклон» на время обрезки не нужны
+        RightCol.Width = new GridLength(trimEdit ? 0 : 268); GapCol.Width = new GridLength(trimEdit ? 0 : 16);
+        NowCard.Visibility = trimEdit || cfg.Compact ? Visibility.Collapsed : Visibility.Visible; // и под приближенную волну
         bool has = cur.TrimStart >= 0 || cur.TrimEnd > 0;
         TrimBtn.Content = trimEdit ? "Обрезка: идёт" : has ? "Обрезка ✂" : "Обрезка";
         if (trimEdit)
         {
             string a = cur.TrimStart >= 0 ? Fmt(TimeSpan.FromSeconds(cur.TrimStart)) : "не задано";
             string b = cur.TrimEnd > 0 ? Fmt(TimeSpan.FromSeconds(cur.TrimEnd)) : "не задан";
-            TrimHint.Text = $"Начало: {a}   ·   Конец: {b}";
+            TrimHint.Text = $"Начало: {a}  ·  Конец: {b}";
+            zoomWinLen = -1; // заново подобрать окно
+            UpdateZoom(cur.Reader.CurrentTime.TotalSeconds);
         }
     }
 
@@ -1863,16 +1849,83 @@ public partial class MainWindow : Window
         EnterTrim();
     }
 
+    // ---------- приближённая волна ----------
+
+    static readonly double[] ZoomLevels = { 30, 15, 8, 4, 2 }; // секунд в окне
+    int zoomIdx = 2;
+    double zoomStart, zoomWinLen = -1;
+    bool zoomUser;   // игла поставлена пальцем/мышью: окно не переезжает само
+    int zoomReq;
+
+    void ZoomIn_Click(object sender, RoutedEventArgs e) => ZoomStep(1);
+    void ZoomOut_Click(object sender, RoutedEventArgs e) => ZoomStep(-1);
+
+    void ZoomStep(int d)
+    {
+        int n = Math.Clamp(zoomIdx + d, 0, ZoomLevels.Length - 1);
+        if (n == zoomIdx) return;
+        zoomIdx = n;
+        zoomWinLen = -1;
+        zoomUser = false;
+        if (trimEdit) ShowTrim();
+    }
+
+    // окно приближения: игла в нём; при игре окно «перелистывается», когда игла доходит до правого края
+    void UpdateZoom(double pos)
+    {
+        if (cur == null) return;
+        double tot = cur.Reader.TotalTime.TotalSeconds;
+        double W = Math.Min(ZoomLevels[zoomIdx], Math.Max(1.5, tot));
+        bool playing = cur.Out.PlaybackState == PlaybackState.Playing;
+        bool recentre = zoomWinLen < 0 || zoomWinLen != W || pos < zoomStart - 0.001 || pos > zoomStart + W
+                        || (!zoomUser && playing && pos > zoomStart + W * 0.85);
+        if (recentre)
+        {
+            zoomStart = Math.Clamp(pos - W * 0.35, 0, Math.Max(0, tot - W)); // игла левее центра: больше видно вперёд
+            zoomWinLen = W;
+            zoomUser = false;
+            RequestZoomPeaks(zoomStart, W);
+        }
+        ZoomWave.Duration = W;
+        ZoomWave.TimeOffset = zoomStart;
+        ZoomWave.FadeSeconds = 0;
+        if (!ZoomWave.Dragging) ZoomWave.Progress = Math.Clamp((pos - zoomStart) / W, 0, 1);
+        ZoomWave.Cues = cueSec.Select(c => c < 0 || c < zoomStart || c > zoomStart + W ? -1.0 : c - zoomStart).ToArray();
+        double a = cur.TrimStart < 0 || cur.TrimStart < zoomStart ? -1 : Math.Min(W, cur.TrimStart - zoomStart);
+        double b = cur.TrimEnd <= 0 || cur.TrimEnd > zoomStart + W ? -1 : Math.Max(0.001, cur.TrimEnd - zoomStart);
+        ZoomWave.SetTrim(a, b, true);
+    }
+
+    async void RequestZoomPeaks(double start, double len)
+    {
+        var slot = cur;
+        if (slot == null) return;
+        int id = ++zoomReq;
+        string path = slot.Song.Path;
+        ZoomWave.Loading = true;
+        var peaks = await Task.Run(() => WaveformCache.Window(path, start, len));
+        if (id != zoomReq || cur != slot) return;
+        ZoomWave.Peaks = peaks;
+        ZoomWave.Loading = false;
+    }
+
+    void ZoomScrub(double frac, bool done)
+    {
+        if (cur == null) return;
+        if (!done) return;
+        double tot = cur.Reader.TotalTime.TotalSeconds;
+        double t = zoomStart + frac * Math.Max(0.1, zoomWinLen);
+        cur.Seek(TimeSpan.FromSeconds(Math.Clamp(t, 0, Math.Max(0, tot - 0.1))));
+        zoomUser = true;
+    }
+
     void TrimStart_Click(object sender, RoutedEventArgs e) => MarkTrim(true);
     void TrimEnd_Click(object sender, RoutedEventArgs e) => MarkTrim(false);
 
-    async void MarkTrim(bool isStart)
+    void MarkTrim(bool isStart)
     {
         if (cur == null) { SetStatus("Сначала включите трек"); return; }
-        var slot = cur;
-        double raw = Math.Round(slot.Reader.CurrentTime.TotalSeconds, 2);
-        double pos = Math.Round(await Snap(slot.Song.Path, raw), 2);
-        if (cur != slot) return; // за время поиска включили другой трек
+        double pos = Math.Round(cur.Reader.CurrentTime.TotalSeconds, 2);
         if (isStart)
         {
             if (cur.TrimEnd > 0 && pos >= cur.TrimEnd - 0.5) { SetStatus("Начало должно быть раньше конца: сначала передвиньте «Конец»"); return; }
@@ -1885,7 +1938,7 @@ public partial class MainWindow : Window
         }
         Trims.Save(cur.Song.Path, cur.TrimStart, cur.TrimEnd);
         ShowTrim();
-        SetStatus($"{(isStart ? "Начало" : "Конец")} трека: {Fmt(TimeSpan.FromSeconds(pos))}{SnapNote(raw, pos)}");
+        SetStatus($"{(isStart ? "Начало" : "Конец")} трека: {Fmt(TimeSpan.FromSeconds(pos))}");
     }
 
     void TrimReset_Click(object sender, RoutedEventArgs e)

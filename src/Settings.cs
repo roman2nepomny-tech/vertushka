@@ -22,8 +22,6 @@ public class Settings
     public int LoopLen { get; set; } = 8;
     // выход для предпрослушивания: имя звукового устройства (номера сдвигаются при подключении USB), пусто — не выбран
     public string PreviewDeviceName { get; set; }
-    // метки (обычные и «начало/конец» обрезки) прилипают к ближайшему самому тихому месту
-    public bool SnapQuiet { get; set; } = true;
     public bool WaveBars { get; set; }
     public bool MiniOpen { get; set; }
     public double? MiniLeft { get; set; }

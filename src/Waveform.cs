@@ -68,6 +68,41 @@ public static class WaveformCache
         catch { return null; }
     });
 
+    // пики для куска трека [start, start+len) с bins столбиками — для приближённой волны
+    public static float[] Window(string file, double start, double len, int bins = 1000)
+    {
+        try
+        {
+            using var r = new AudioFileReader(file);
+            int ch = r.WaveFormat.Channels, sr = r.WaveFormat.SampleRate;
+            start = Math.Clamp(start, 0, r.TotalTime.TotalSeconds);
+            r.CurrentTime = TimeSpan.FromSeconds(start);
+            long frames = Math.Max(1, (long)(len * sr));
+            var peaks = new float[bins];
+            var buf = new float[4096 * ch];
+            long fi = 0;
+            while (fi < frames)
+            {
+                int want = (int)Math.Min(4096, frames - fi);
+                int n = r.Read(buf, 0, want * ch);
+                if (n <= 0) break;
+                int got = n / ch;
+                for (int f = 0; f < got; f++, fi++)
+                {
+                    int b = (int)(fi * bins / frames);
+                    if (b >= bins) b = bins - 1;
+                    float m = 0;
+                    for (int c = 0; c < ch; c++) m = Math.Max(m, Math.Abs(buf[f * ch + c]));
+                    if (m > peaks[b]) peaks[b] = m;
+                }
+            }
+            float refv = Math.Max(peaks.Max(), 0.15f); // тихий кусок не раздуваем до полной высоты
+            for (int i = 0; i < bins; i++) peaks[i] = (float)Math.Pow(Math.Min(1f, peaks[i] / refv), 0.8);
+            return peaks;
+        }
+        catch { return null; }
+    }
+
     static float[] Compute(string file)
     {
         using var r = new AudioFileReader(file);
@@ -147,6 +182,18 @@ public class WaveformControl : FrameworkElement
         for (int i = 0; i < cues.Length; i++)
             if (cues[i] >= 0 && Math.Abs(p.X - CueX(i)) <= 14) return i;
         return -1;
+    }
+
+    // приближённая волна (режим обрезки): окно трека показывается «как весь трек», подписи времени сдвигаются на TimeOffset
+    double timeOffset; bool showBubble = true;
+    public double TimeOffset { get => timeOffset; set { if (timeOffset == value) return; timeOffset = value; InvalidateVisual(); } }
+    public bool ShowBubble { get => showBubble; set { if (showBubble == value) return; showBubble = value; InvalidateVisual(); } }
+
+    static string FmtT(double x, double step)
+    {
+        if (step >= 1) return Fmt(x);
+        int m = (int)(Math.Max(0, x) / 60);
+        return $"{m}:{(Math.Max(0, x) - m * 60).ToString(step < 0.5 ? "00.00" : "00.0")}";
     }
 
     double trimA = -1, trimB = -1; bool trimEdit;
@@ -367,21 +414,25 @@ public class WaveformControl : FrameworkElement
         if (axis && duration > 1)
         {
             // шкала времени: шаг подбираем так, чтобы подписи не слипались
-            double[] steps = { 10, 15, 30, 60, 120, 300 };
+            double[] steps = { 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300 };
             double step = steps.FirstOrDefault(st => duration / st <= Math.Max(2, w / 70), 600);
-            for (double t = 0; t <= duration + 0.01; t += step)
+            double first = Math.Ceiling(timeOffset / step - 1e-9) * step - timeOffset; // метки кратны шагу по времени трека
+            for (double t = first; t <= duration + 0.01; t += step)
             {
                 double tx = t / duration * w;
                 dc.DrawRectangle(muted, null, new Rect(Math.Min(tx, w - 1), H + 2, 1, 4));
-                var ft = Text(Fmt(t), 14, muted);
+                var ft = Text(FmtT(t + timeOffset, step), 14, muted);
                 dc.DrawText(ft, new Point(Math.Clamp(tx - ft.Width / 2, 0, w - ft.Width), H + 6));
             }
             // пузырёк у иглы: сколько прошло и сколько осталось
+            if (showBubble)
+            {
             double bp = progress * duration, ba = !trimEdit && trimA > 0 ? trimA : 0, bb = !trimEdit && trimB > 0 ? trimB : duration;
             var bt = Text($"{Fmt(Math.Max(0, bp - ba))}  ·  осталось {Fmt(Math.Max(0, bb - bp))}", 15, Theme.Get("OnAccent"), true);
             double bw = bt.Width + 18, bx = Math.Clamp(nx - bw / 2, 2, w - bw - 2), by = H - 28;
             dc.DrawRoundedRectangle(Played, null, new Rect(bx, by, bw, 24), 12, 12);
             dc.DrawText(bt, new Point(bx + 9, by + 12 - bt.Height / 2));
+            }
         }
         dc.Pop();
     }
