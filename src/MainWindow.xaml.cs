@@ -1024,6 +1024,8 @@ public partial class MainWindow : Window
             // старый трек уходит за оставшееся время, но не дольше выбранного затухания
             double dur = doFade ? Math.Max(0.5, Math.Min(Crossfade, Remain(old))) : 0;
             if (doFade) { ns.Factor = 0f; ns.FadeTo(1f, dur); }
+            // громкость и плавное нарастание выставляем ДО первого звука: иначе первые ~100 мс трек играет на полной громкости (у обрезанного — с самого громкого места)
+            ns.Tick((float)cfg.Volume * (jinglesActive > 0 ? 0.35f : 1f) * duck);
             ns.Out.Play();
             cur = ns;
             if (old != null)

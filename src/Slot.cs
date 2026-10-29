@@ -21,7 +21,7 @@ public class Slot : IDisposable
     public Slot(Song song)
     {
         Song = song;
-        Reader = new AudioFileReader(song.Path);
+        Reader = new AudioFileReader(song.Path) { Volume = 0f }; // тихо, пока не выставлена громкость (иначе первые доли секунды играют на полную)
         try
         {
             Out = new WaveOutEvent { DesiredLatency = 120 };
