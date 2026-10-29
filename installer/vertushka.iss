@@ -42,6 +42,17 @@ Source: "..\Vertushka\app.ico"; DestDir: "{app}"; DestName: "vertushka-icon.ico"
 Source: "..\Vertushka\filetype.ico"; DestDir: "{app}"; DestName: "vertushka-music.ico"; Flags: ignoreversion
 
 [Registry]
+; Windows сам создаёт ключ Applications\Vertushka.exe, когда выбираешь программу в «Открыть с помощью»: иконку файлов берёт отсюда (поэтому без галочки)
+Root: HKA; Subkey: "Software\Classes\Applications\Vertushka.exe\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\vertushka-music.ico"
+Root: HKA; Subkey: "Software\Classes\Applications\Vertushka.exe\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Vertushka.exe"" ""%1"""
+Root: HKA; Subkey: "Software\Classes\Applications\Vertushka.exe\SupportedTypes"; ValueType: string; ValueName: ".mp3"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\Vertushka.exe\SupportedTypes"; ValueType: string; ValueName: ".wav"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\Vertushka.exe\SupportedTypes"; ValueType: string; ValueName: ".flac"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\Vertushka.exe\SupportedTypes"; ValueType: string; ValueName: ".m4a"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\Vertushka.exe\SupportedTypes"; ValueType: string; ValueName: ".wma"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\Vertushka.exe\SupportedTypes"; ValueType: string; ValueName: ".aac"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\Vertushka.exe\SupportedTypes"; ValueType: string; ValueName: ".aif"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\Vertushka.exe\SupportedTypes"; ValueType: string; ValueName: ".aiff"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\Vertushka.Audio"; ValueType: string; ValueName: ""; ValueData: "Музыка (Vertushka)"; Flags: uninsdeletekey; Tasks: assoc
 Root: HKA; Subkey: "Software\Classes\Vertushka.Audio\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\vertushka-music.ico"; Tasks: assoc
 Root: HKA; Subkey: "Software\Classes\Vertushka.Audio\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Vertushka.exe"" ""%1"""; Tasks: assoc
