@@ -31,11 +31,28 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Значок на рабочем столе"; GroupDescription: "Дополнительно:"
+Name: "assoc"; Description: "Показывать Vertushka в «Открыть с помощью» для mp3, wav и других музыкальных файлов (со своей иконкой)"; GroupDescription: "Дополнительно:"
 
 [Files]
 Source: "..\build\app\Vertushka.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; значок отдельным файлом: ярлыки ссылаются на него, и Windows не берёт старый значок из кэша
 Source: "..\Vertushka\app.ico"; DestDir: "{app}"; DestName: "vertushka-icon.ico"; Flags: ignoreversion
+
+; иконка музыкальных файлов (когда Vertushka выбрана программой для них)
+Source: "..\Vertushka\filetype.ico"; DestDir: "{app}"; DestName: "vertushka-music.ico"; Flags: ignoreversion
+
+[Registry]
+Root: HKA; Subkey: "Software\Classes\Vertushka.Audio"; ValueType: string; ValueName: ""; ValueData: "Музыка (Vertushka)"; Flags: uninsdeletekey; Tasks: assoc
+Root: HKA; Subkey: "Software\Classes\Vertushka.Audio\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\vertushka-music.ico"; Tasks: assoc
+Root: HKA; Subkey: "Software\Classes\Vertushka.Audio\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Vertushka.exe"" ""%1"""; Tasks: assoc
+Root: HKA; Subkey: "Software\Classes\.mp3\OpenWithProgids"; ValueType: none; ValueName: "Vertushka.Audio"; Flags: uninsdeletevalue; Tasks: assoc
+Root: HKA; Subkey: "Software\Classes\.wav\OpenWithProgids"; ValueType: none; ValueName: "Vertushka.Audio"; Flags: uninsdeletevalue; Tasks: assoc
+Root: HKA; Subkey: "Software\Classes\.flac\OpenWithProgids"; ValueType: none; ValueName: "Vertushka.Audio"; Flags: uninsdeletevalue; Tasks: assoc
+Root: HKA; Subkey: "Software\Classes\.m4a\OpenWithProgids"; ValueType: none; ValueName: "Vertushka.Audio"; Flags: uninsdeletevalue; Tasks: assoc
+Root: HKA; Subkey: "Software\Classes\.wma\OpenWithProgids"; ValueType: none; ValueName: "Vertushka.Audio"; Flags: uninsdeletevalue; Tasks: assoc
+Root: HKA; Subkey: "Software\Classes\.aac\OpenWithProgids"; ValueType: none; ValueName: "Vertushka.Audio"; Flags: uninsdeletevalue; Tasks: assoc
+Root: HKA; Subkey: "Software\Classes\.aif\OpenWithProgids"; ValueType: none; ValueName: "Vertushka.Audio"; Flags: uninsdeletevalue; Tasks: assoc
+Root: HKA; Subkey: "Software\Classes\.aiff\OpenWithProgids"; ValueType: none; ValueName: "Vertushka.Audio"; Flags: uninsdeletevalue; Tasks: assoc
 
 [Icons]
 Name: "{group}\Vertushka"; Filename: "{app}\Vertushka.exe"; IconFilename: "{app}\vertushka-icon.ico"

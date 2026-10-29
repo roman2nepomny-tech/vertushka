@@ -67,6 +67,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // на ноутбуке экран меньше: окно не больше рабочей области (без панели задач)
+        var wa = SystemParameters.WorkArea;
+        Width = Math.Min(Width, wa.Width); Height = Math.Min(Height, wa.Height);
         if (cfg.Event != null && !Directory.Exists(EventRoot)) cfg.Event = null;
         try { EnsureEventDirs(); }
         catch { SetStatus("Папка с музыкой недоступна. Проверьте диск или сеть и перезапустите программу"); }
@@ -100,6 +103,23 @@ public partial class MainWindow : Window
         Wave.CueRemove += RemoveCue;
         timer.Tick += (s, e) => Tick();
         timer.Start();
+        // файл открыт двойным щелчком / «Открыть с помощью»: добавляем в текущий раздел и включаем
+        var openFiles = Environment.GetCommandLineArgs().Skip(1).Where(a => File.Exists(a) && IsAudio(a)).ToList();
+        if (openFiles.Count > 0) Loaded += (s, e) => OpenFromArgs(openFiles);
+    }
+
+    async void OpenFromArgs(List<string> files)
+    {
+        if (shownSection == null) return;
+        try
+        {
+            int n = await Task.Run(() => CopyInto(files, SectionDir(shownSection)));
+            if (n > 0) RefreshAll();
+            var name = System.IO.Path.GetFileNameWithoutExtension(files[0]);
+            var song = songs.FirstOrDefault(x => x.Name == name);
+            if (song != null) { PlayFromList(song); TrackList.ScrollIntoView(song); }
+        }
+        catch { SetStatus("Не получилось открыть файл"); }
     }
 
     // ---------- разделы и треки ----------
@@ -540,6 +560,67 @@ public partial class MainWindow : Window
 
     static string[] DroppedFiles(DragEventArgs e) => e.Data.GetData(DataFormats.FileDrop) as string[];
 
+    // ---------- плавная прокрутка колесом ----------
+
+    double wheelTarget = double.NaN;
+    bool wheelRunning;
+
+    void TrackList_Wheel(object sender, MouseWheelEventArgs e)
+    {
+        var sv = FindScroll(TrackList);
+        if (sv == null || sv.ScrollableHeight <= 0) return;
+        if (double.IsNaN(wheelTarget) || !wheelRunning) wheelTarget = sv.VerticalOffset;
+        wheelTarget = Math.Clamp(wheelTarget - e.Delta * 0.9, 0, sv.ScrollableHeight);
+        e.Handled = true;
+        if (wheelRunning) return;
+        wheelRunning = true;
+        void Step(object o, EventArgs a)
+        {
+            wheelTarget = Math.Clamp(wheelTarget, 0, sv.ScrollableHeight);
+            double diff = wheelTarget - sv.VerticalOffset;
+            if (Math.Abs(diff) < 0.6) { sv.ScrollToVerticalOffset(wheelTarget); CompositionTarget.Rendering -= Step; wheelRunning = false; return; }
+            sv.ScrollToVerticalOffset(sv.VerticalOffset + diff * 0.22);
+        }
+        CompositionTarget.Rendering += Step;
+    }
+
+    // ---------- выбранные треки: поднять / опустить / в начало / в конец ----------
+
+    // delta: -1 вверх, +1 вниз на одну позицию; int.MinValue — в начало, int.MaxValue — в конец. Порядок остальных не меняется.
+    void MoveSelected(int delta)
+    {
+        if (SearchBox.Text.Length > 0) { SetStatus("При поиске порядок не меняем: очистите поиск (Esc)"); return; }
+        var sel = SelectedSongs();
+        if (sel.Count == 0 || shownSection == null) return;
+        var set = new HashSet<Song>(sel);
+        var order = songs.ToList();
+        if (delta == int.MinValue) order = sel.Concat(order.Where(x => !set.Contains(x))).ToList();
+        else if (delta == int.MaxValue) order = order.Where(x => !set.Contains(x)).Concat(sel).ToList();
+        else if (delta < 0)
+        {
+            for (int i = 1; i < order.Count; i++)
+                if (set.Contains(order[i]) && !set.Contains(order[i - 1])) (order[i - 1], order[i]) = (order[i], order[i - 1]);
+        }
+        else
+        {
+            for (int i = order.Count - 2; i >= 0; i--)
+                if (set.Contains(order[i]) && !set.Contains(order[i + 1])) (order[i + 1], order[i]) = (order[i], order[i + 1]);
+        }
+        bool changed = false;
+        for (int i = 0; i < order.Count; i++)
+        {
+            int from = songs.IndexOf(order[i]);
+            if (from != i) { songs.Move(from, i); changed = true; }
+        }
+        if (!changed) return;
+        for (int i = 0; i < songs.Count; i++) songs[i].Num = i + 1;
+        SaveOrder(shownSection, songs);
+        if (playingSection == shownSection) RebuildQueue();
+        TrackList.SelectedItems.Clear();
+        foreach (var o in sel) TrackList.SelectedItems.Add(o);
+        TrackList.ScrollIntoView(sel[0]);
+    }
+
     // ---------- ручной порядок треков (перетаскивание) ----------
 
     const string SongFmt = "VertushkaSong";
@@ -638,8 +719,8 @@ public partial class MainWindow : Window
         var sv = FindScroll(TrackList);
         if (sv == null) return;
         double y = e.GetPosition(TrackList).Y;
-        if (y < 40) sv.ScrollToVerticalOffset(sv.VerticalOffset - 1);
-        else if (y > TrackList.ActualHeight - 40) sv.ScrollToVerticalOffset(sv.VerticalOffset + 1);
+        if (y < 40) sv.ScrollToVerticalOffset(sv.VerticalOffset - 14);
+        else if (y > TrackList.ActualHeight - 40) sv.ScrollToVerticalOffset(sv.VerticalOffset + 14);
     }
 
     static ScrollViewer FindScroll(DependencyObject d)
@@ -783,6 +864,12 @@ public partial class MainWindow : Window
                 mv.Items.Add(it);
             }
             m.Items.Add(mv);
+            m.Items.Add(new Separator());
+            var mu1 = new MenuItem { Header = "Поднять выше (Ctrl+Shift+↑)" }; mu1.Click += (a, b) => MoveSelected(-1); m.Items.Add(mu1);
+            var md1 = new MenuItem { Header = "Опустить ниже (Ctrl+Shift+↓)" }; md1.Click += (a, b) => MoveSelected(1); m.Items.Add(md1);
+            var mt = new MenuItem { Header = "В начало списка" }; mt.Click += (a, b) => MoveSelected(int.MinValue); m.Items.Add(mt);
+            var mb = new MenuItem { Header = "В конец списка" }; mb.Click += (a, b) => MoveSelected(int.MaxValue); m.Items.Add(mb);
+            m.Items.Add(new Separator());
             var dl = new MenuItem { Header = $"Убрать из раздела ({n}, в корзину)" };
             dl.Click += (a, b) => DeleteSongs(sel);
             m.Items.Add(dl);
@@ -816,6 +903,10 @@ public partial class MainWindow : Window
             move.Items.Add(it);
         }
         m.Items.Add(move);
+        var up1 = new MenuItem { Header = "Поднять выше (Ctrl+Shift+↑)" }; up1.Click += (a, b) => MoveSelected(-1); m.Items.Add(up1);
+        var dn1 = new MenuItem { Header = "Опустить ниже (Ctrl+Shift+↓)" }; dn1.Click += (a, b) => MoveSelected(1); m.Items.Add(dn1);
+        var top = new MenuItem { Header = "В начало списка" }; top.Click += (a, b) => MoveSelected(int.MinValue); m.Items.Add(top);
+        var bot = new MenuItem { Header = "В конец списка" }; bot.Click += (a, b) => MoveSelected(int.MaxValue); m.Items.Add(bot);
         var trim = new MenuItem { Header = "Обрезка (метки на волне)…" };
         trim.Click += (a, b) => EnterTrimFor(song);
         m.Items.Add(trim);
@@ -936,12 +1027,6 @@ public partial class MainWindow : Window
         upNext.Insert(0, s);
         SetStatus($"Следующим: «{s.Name}»");
         MarkPlaying();
-    }
-
-    void AddNext_Click(object sender, RoutedEventArgs e)
-    {
-        if (((FrameworkElement)sender).DataContext is Song s) PlayNextNow(s);
-        e.Handled = true;
     }
 
     void QueueLast(Song s)
@@ -1326,6 +1411,7 @@ public partial class MainWindow : Window
             var rm = new MenuItem { Header = "Убрать джингл" };
             rm.Click += (s, e) =>
             {
+                StopJingle(); // файл может играть сейчас
                 try { FileSystem.DeleteFile(path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin); } catch { }
                 RebuildJingles();
             };
@@ -1341,8 +1427,33 @@ public partial class MainWindow : Window
         }
     }
 
+    // Один джингл за раз: новый запуск сначала гасит прежний (иначе звуки накладываются и не выключаются)
+    WaveOutEvent jOut;
+    AudioFileReader jRd;
+    int jLive; // сколько джинглов сейчас живо (должно быть 0 или 1)
+
+    void JLog(string what)
+    {
+        if (Environment.GetEnvironmentVariable("VERTUSHKA_JLOG") != "1") return;
+        try { File.AppendAllText(System.IO.Path.Combine(Paths.AppData, "jingles.log"), $"{DateTime.Now:HH:mm:ss.fff} {what} live={jLive}\n"); } catch { }
+    }
+
+    void StopJingle()
+    {
+        var o = jOut; var r = jRd;
+        jOut = null; jRd = null;
+        jinglesActive = 0;
+        if (o == null) return;
+        try { o.Stop(); } catch { }
+        try { o.Dispose(); } catch { }
+        try { r?.Dispose(); } catch { }
+        jLive--;
+        JLog("stop");
+    }
+
     void PlayJingle(string path)
     {
+        StopJingle();
         AudioFileReader r = null;
         WaveOutEvent o = null;
         try
@@ -1350,19 +1461,24 @@ public partial class MainWindow : Window
             r = new AudioFileReader(path) { Volume = (float)cfg.JingleVolume };
             o = new WaveOutEvent();
             o.Init(r);
-            var ro = o; var rr = r;
-            // WaveOutEvent сообщает об остановке в потоке окна, так что счётчик меняется только здесь
-            o.PlaybackStopped += (s, e) => { jinglesActive = Math.Max(0, jinglesActive - 1); ro.Dispose(); rr.Dispose(); };
+            var ro = o;
+            // естественный конец (в потоке окна): гасим только если это всё ещё текущий джингл
+            o.PlaybackStopped += (s, e) => { if (ReferenceEquals(ro, jOut)) StopJingle(); };
+            jOut = o; jRd = r;
+            jLive++;
+            jinglesActive = 1;
             o.Play();
-            jinglesActive++;
+            JLog("play " + System.IO.Path.GetFileName(path));
         }
         catch
         {
-            o?.Dispose();
-            r?.Dispose();
+            if (o != null && ReferenceEquals(o, jOut)) StopJingle();
+            else { o?.Dispose(); r?.Dispose(); }
             SetStatus("Не удалось включить джингл");
         }
     }
+
+    void StopJingle_Click(object sender, RoutedEventArgs e) => StopJingle();
 
     void AddJingle_Click(object sender, RoutedEventArgs e)
     {
@@ -1536,6 +1652,7 @@ public partial class MainWindow : Window
         switch (e.Key)
         {
             case Key.Space: PlayPause(); break;
+            case Key.Escape: if (jOut == null) return; StopJingle(); break;
             case Key.N: Next(true); break;
             case Key.B: Prev(); break;
             case Key.F: if (ctrl) SearchBox.Focus(); else FadePause(); break;
@@ -1550,12 +1667,14 @@ public partial class MainWindow : Window
             case Key.Enter:
                 if (TrackList.SelectedItem is Song s) PlayFromList(s); else return;
                 break;
+            case Key.Up when ctrl && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift): MoveSelected(-1); break;
+            case Key.Down when ctrl && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift): MoveSelected(1); break;
             case Key.Up when ctrl: VolSlider.Value = Math.Min(1, VolSlider.Value + 0.05); break;
             case Key.Down when ctrl: VolSlider.Value = Math.Max(0, VolSlider.Value - 0.05); break;
             default:
                 int idx = e.Key >= Key.D1 && e.Key <= Key.D9 ? e.Key - Key.D1
                         : e.Key >= Key.NumPad1 && e.Key <= Key.NumPad9 ? e.Key - Key.NumPad1 : -1;
-                if (idx < 0) return;
+                if (idx < 0 || e.IsRepeat) return; // зажатая цифра не запускает звук снова и снова
                 var j = JingleFiles();
                 if (idx < j.Count) PlayJingle(j[idx]);
                 break;
@@ -2112,7 +2231,7 @@ public partial class MainWindow : Window
         FullWaveHost.Child = null;
         MiniWaveHost.Child = null;
         if (on) { Wave.ShowAxis = false; Wave.Height = 30; MiniWaveHost.Child = Wave; }
-        else { Wave.ShowAxis = true; Wave.Height = 112; FullWaveHost.Child = Wave; }
+        else { Wave.ShowAxis = true; Wave.Height = 88; FullWaveHost.Child = Wave; }
         SyncMini();
     }
 
@@ -2189,6 +2308,19 @@ public partial class MainWindow : Window
 
     // ---------- своя полоса заголовка ----------
 
+    // окно уже/ниже «родного» размера (половина экрана на ноутбуке): всё содержимое уменьшаем целиком, а не вылезаем за экран
+    double uiScale = 1;
+
+    void Window_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        double k = Math.Max(0.6, Math.Min(1.0, Math.Min(ActualWidth / 1080.0, ActualHeight / 800.0)));
+        if (Math.Abs(uiScale - k) < 0.005) return;
+        uiScale = k;
+        Root.LayoutTransform = k >= 0.999 ? Transform.Identity : new ScaleTransform(k, k);
+        var wc = System.Windows.Shell.WindowChrome.GetWindowChrome(this);
+        if (wc != null) wc.CaptionHeight = 56 * k;
+    }
+
     void Min_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
     void Max_Click(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     void Close_Click(object sender, RoutedEventArgs e) => Close();
@@ -2207,6 +2339,7 @@ public partial class MainWindow : Window
     {
         timer.Stop();
         closing = true;
+        StopJingle();
         mini?.Close();
         preview?.Dispose();
         if (recording) StopRecording();
