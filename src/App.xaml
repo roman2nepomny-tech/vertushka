@@ -152,7 +152,7 @@
     <Style x:Key="SeekThumb" TargetType="Thumb">
       <Setter Property="Template">
         <Setter.Value>
-          <ControlTemplate TargetType="Thumb"><Ellipse Width="18" Height="18" Fill="{DynamicResource Text}"/></ControlTemplate>
+          <ControlTemplate TargetType="Thumb"><Ellipse Width="22" Height="22" Fill="{DynamicResource Text}"/></ControlTemplate>
         </Setter.Value>
       </Setter>
     </Style>
@@ -163,8 +163,8 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Slider">
-            <Grid Height="28" Background="Transparent">
-              <Border Height="5" CornerRadius="2.5" Background="{DynamicResource Track}" VerticalAlignment="Center"/>
+            <Grid Height="36" Background="Transparent">
+              <Border Height="6" CornerRadius="3" Background="{DynamicResource Track}" VerticalAlignment="Center"/>
               <Track x:Name="PART_Track" VerticalAlignment="Center">
                 <Track.DecreaseRepeatButton><RepeatButton Command="Slider.DecreaseLarge" Style="{StaticResource SeekFill}"/></Track.DecreaseRepeatButton>
                 <Track.IncreaseRepeatButton><RepeatButton Command="Slider.IncreaseLarge" Style="{StaticResource Invisible}"/></Track.IncreaseRepeatButton>

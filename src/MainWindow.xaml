@@ -12,23 +12,25 @@
   <Window.Resources>
     <Style x:Key="SectionItem" TargetType="ListBoxItem">
       <Setter Property="AllowDrop" Value="True"/>
-      <Setter Property="Padding" Value="14,4"/>
-      <Setter Property="Margin" Value="0,0,4,0"/>
+      <Setter Property="Padding" Value="10,1"/>
+      <Setter Property="Margin" Value="0,0,3,0"/>
       <Setter Property="Foreground" Value="{DynamicResource Text}"/>
       <EventSetter Event="DragEnter" Handler="Section_DragEnter"/>
       <EventSetter Event="DragOver" Handler="Section_DragOver"/>
       <EventSetter Event="DragLeave" Handler="Section_DragLeave"/>
       <EventSetter Event="Drop" Handler="Section_Drop"/>
+      <EventSetter Event="PreviewMouseLeftButtonDown" Handler="SectionItem_MouseDown"/>
+      <EventSetter Event="PreviewMouseMove" Handler="SectionItem_MouseMove"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="ListBoxItem">
-            <Border x:Name="B" CornerRadius="16" Padding="{TemplateBinding Padding}" MinHeight="42" Background="Transparent"
+            <Border x:Name="B" CornerRadius="14" Padding="{TemplateBinding Padding}" MinHeight="32" Background="Transparent"
                     BorderThickness="1.5" BorderBrush="Transparent">
               <Grid VerticalAlignment="Center">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <Ellipse Width="12" Height="12" Fill="{Binding Fill}" Margin="0,0,9,0" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Nm" Grid.Column="1" Text="{Binding Name}" Foreground="{DynamicResource Text}" FontSize="18" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                <TextBlock x:Name="C" Grid.Column="2" Text="{Binding Count}" Foreground="{DynamicResource Muted}" FontSize="19" FontFamily="/Fonts/#Unbounded" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                <Ellipse Width="9" Height="9" Fill="{Binding Fill}" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                <TextBlock x:Name="Nm" Grid.Column="1" Text="{Binding Name}" Foreground="{DynamicResource Text}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="170" VerticalAlignment="Center"/>
+                <TextBlock x:Name="C" Grid.Column="2" Text="{Binding Count}" Foreground="{DynamicResource Muted}" FontSize="13" FontFamily="/Fonts/#Unbounded" Margin="6,0,0,0" VerticalAlignment="Center"/>
               </Grid>
             </Border>
             <ControlTemplate.Triggers>
@@ -282,14 +284,18 @@
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition x:Name="GapCol" Width="16"/><ColumnDefinition x:Name="RightCol" Width="268"/></Grid.ColumnDefinitions>
 
-      <DockPanel Grid.ColumnSpan="3" Margin="0,0,0,8">
-        <Button DockPanel.Dock="Right" Style="{StaticResource Flat}" Content="+ Раздел" Margin="10,0,0,0" VerticalAlignment="Center" Click="NewSection_Click" ToolTip="Новый раздел (папка с треками)"/>
-        <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="28" Padding="5,4" HorizontalAlignment="Left">
+      <DockPanel Grid.ColumnSpan="3" Margin="0,0,0,8" Background="Transparent" AllowDrop="True" DragOver="TrackList_DragOver" Drop="Strip_Drop">
+        <Button DockPanel.Dock="Right" Style="{StaticResource Flat}" Content="+ Раздел" FontSize="14" Padding="12,6" Margin="8,0,0,0" VerticalAlignment="Center" Click="NewSection_Click" ToolTip="Новый раздел (папка с треками). Папку с треками можно перетащить сюда: получится раздел"/>
+        <Button DockPanel.Dock="Right" Style="{StaticResource Flat}" Content="&#xE76C;" FontFamily="Segoe MDL2 Assets" FontSize="13" Padding="10,7" Margin="6,0,0,0" VerticalAlignment="Center" Click="SecRight_Click" ToolTip="Листать разделы вправо"/>
+        <Button DockPanel.Dock="Right" Style="{StaticResource Flat}" Content="&#xE76B;" FontFamily="Segoe MDL2 Assets" FontSize="13" Padding="10,7" Margin="6,0,0,0" VerticalAlignment="Center" Click="SecLeft_Click" ToolTip="Листать разделы влево"/>
+        <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="20" Padding="4,3" HorizontalAlignment="Left">
           <ListBox x:Name="SectionList" ItemContainerStyle="{StaticResource SectionItem}"
+                   ScrollViewer.HorizontalScrollBarVisibility="Hidden" ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.CanContentScroll="False"
+                   PreviewMouseWheel="SectionList_Wheel"
                    SelectionChanged="SectionList_SelectionChanged"
                    PreviewMouseRightButtonDown="List_RightClick"
                    ContextMenuOpening="SectionList_ContextMenuOpening">
-            <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ListBox.ItemsPanel>
+            <ListBox.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ListBox.ItemsPanel>
           </ListBox>
         </Border>
       </DockPanel>
@@ -313,7 +319,7 @@
             <TextBlock x:Name="RemainText" Text="0:00" FontFamily="/Fonts/#Unbounded" FontWeight="Light" Typography.NumeralAlignment="Tabular" FontSize="32" HorizontalAlignment="Right" ToolTip="Сколько осталось до конца трека"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
               <TextBlock Text="&#xE767;" FontFamily="Segoe MDL2 Assets" FontSize="18" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-              <Slider x:Name="VolSlider" Width="130" Minimum="0" Maximum="1" Value="0.8" ValueChanged="Vol_Changed"/>
+              <Slider x:Name="VolSlider" Width="150" Minimum="0" Maximum="1" Value="0.8" ValueChanged="Vol_Changed"/>
             </StackPanel>
           </StackPanel>
         </Grid>
@@ -337,7 +343,7 @@
       <Border Grid.Row="3" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="26" Padding="8">
         <Grid>
           <ListBox x:Name="TrackList" ItemContainerStyle="{StaticResource TrackItem}" AllowDrop="True" SelectionMode="Extended"
-                   VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.CanContentScroll="True" PreviewMouseWheel="TrackList_Wheel"
+                   VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.CanContentScroll="True" PreviewMouseWheel="TrackList_Wheel" PreviewMouseMove="TrackList_PreviewMove" PreviewMouseLeftButtonUp="TrackList_PreviewUp" LostMouseCapture="TrackList_LostCapture"
                    Drop="TrackList_Drop" DragOver="TrackList_DragOver" DragLeave="TrackList_DragLeave"
                    PreviewMouseRightButtonDown="List_RightClick"
                    ContextMenuOpening="TrackList_ContextMenuOpening"/>
@@ -348,13 +354,16 @@
       </Border>
 
       <Grid x:Name="RightPanel" Grid.Column="2" Grid.Row="1" Grid.RowSpan="3">
-      <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="26" Padding="18,16" VerticalAlignment="Top" MinHeight="220">
-        <StackPanel>
+      <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="26" Padding="18,16" VerticalAlignment="Top" MinHeight="120" Margin="0,0,0,8" ClipToBounds="True">
+        <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <DockPanel>
             <Button x:Name="NextClearBtn" DockPanel.Dock="Right" Style="{StaticResource Flat}" Content="Очистить" FontSize="13" Padding="10,3" Visibility="Collapsed" ToolTip="Убрать все треки из списка «Далее»" Click="NextClear_Click"/>
             <TextBlock x:Name="NextHead" Text="ДАЛЕЕ" FontSize="15" Foreground="{DynamicResource Muted}" VerticalAlignment="Center"/>
           </DockPanel>
-          <ItemsControl x:Name="NextItems" Margin="0,8,0,0">
+          <ScrollViewer Grid.Row="1" Margin="0,8,0,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
+          <ItemsControl x:Name="NextItems">
             <ItemsControl.ItemTemplate>
               <DataTemplate>
                 <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,9">
@@ -367,10 +376,11 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
-          <TextBlock x:Name="NextEmpty" Text="Правый клик по треку → «Играть следующим»" FontSize="14" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,10,0,0"/>
-        </StackPanel>
+          </ScrollViewer>
+          <TextBlock x:Name="NextEmpty" Grid.Row="2" Text="Правый клик по треку → «Играть следующим»" FontSize="14" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,10,0,0"/>
+        </Grid>
       </Border>
-      <StackPanel VerticalAlignment="Bottom">
+      <StackPanel Grid.Row="1" VerticalAlignment="Bottom">
         <UniformGrid x:Name="LoopLenPanel" Columns="4" Margin="0,0,0,8">
           <Button Style="{StaticResource Flat}" Tag="4" Content="4 с" FontSize="15" Padding="4,7" Margin="0,0,4,0" Click="LoopLen_Click" ToolTip="Длина петли 4 секунды"/>
           <Button Style="{StaticResource Flat}" Tag="8" Content="8 с" FontSize="15" Padding="4,7" Margin="0,0,4,0" Click="LoopLen_Click" ToolTip="Длина петли 8 секунд"/>
@@ -390,7 +400,7 @@
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
           <TextBlock Text="&#xE767;" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="0,0,8,0" ToolTip="Громкость джинглов"/>
-          <Slider x:Name="JingleVol" Width="110" Minimum="0" Maximum="1" Value="0.8" ValueChanged="JingleVol_Changed" ToolTip="Громкость джинглов"/>
+          <Slider x:Name="JingleVol" Width="130" Minimum="0" Maximum="1" Value="0.8" ValueChanged="JingleVol_Changed" ToolTip="Громкость джинглов"/>
           <Button Style="{StaticResource Flat}" Content="Стоп" Padding="12,8" Margin="14,0,0,0" Click="StopJingle_Click" ToolTip="Остановить джингл (Esc)"/>
           <Button Style="{StaticResource Flat}" Content="+ Джингл" Padding="12,8" Margin="8,0,0,0" Click="AddJingle_Click"/>
         </StackPanel>
@@ -452,6 +462,7 @@
             <Button Style="{StaticResource IconBtn}" Width="40" Height="40" Content="&#xE893;" ToolTip="Следующий (N)" Margin="2,0,0,0" Click="Next_Click"/>
             <Button Style="{StaticResource IconBtn}" Width="40" Height="40" Content="&#xE71A;" ToolTip="Стоп" Margin="14,0,0,0" Click="Stop_Click"/>
             <Button Style="{StaticResource Flat}" Content="Плавная пауза" FontSize="15" Padding="14,8" Margin="10,0,0,0" ToolTip="Плавно убрать звук и поставить на паузу (F)" Click="FadePause_Click"/>
+            <ToggleButton x:Name="RepeatBtn" Style="{StaticResource Flat}" Content="Повтор трека" FontSize="15" Padding="14,8" Margin="8,0,0,0" ToolTip="Играть этот трек по кругу, пока не выключите (T)" Click="Repeat_Click"/>
           </StackPanel>
           <TextBlock x:Name="StatusText" Grid.Column="1" Foreground="{DynamicResource Text}" FontSize="20" VerticalAlignment="Center" Margin="22,0" TextTrimming="CharacterEllipsis"/>
           <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
@@ -471,7 +482,7 @@
           </StackPanel>
           <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
             <ToggleButton x:Name="FadeTgl" Style="{StaticResource Flat}" Content="Затухание в конце" FontSize="14" Padding="11,6" IsChecked="True" Click="FadeTgl_Click" ToolTip="Включено: в конце каждого трека он плавно затихает, а следующий так же плавно нарастает. Выключено: резкая смена."/>
-            <Slider x:Name="FadeSlider" Width="90" Margin="10,0,0,0" Minimum="1" Maximum="15" TickFrequency="1" IsSnapToTickEnabled="True" Value="6" ValueChanged="Fade_Changed" ToolTip="За сколько секунд до конца трека начинается затухание"/>
+            <Slider x:Name="FadeSlider" Width="110" Margin="10,0,0,0" Minimum="1" Maximum="15" TickFrequency="1" IsSnapToTickEnabled="True" Value="6" ValueChanged="Fade_Changed" ToolTip="За сколько секунд до конца трека начинается затухание"/>
             <TextBlock x:Name="FadeText" Foreground="{DynamicResource Muted}" FontSize="17" VerticalAlignment="Center" Margin="8,0,0,0" MinWidth="40" Text="6 с"/>
             <Rectangle Width="1" Height="26" Fill="{DynamicResource Line}" Margin="14,0,4,0"/>
             <Button x:Name="WaveStyleBtn" Style="{StaticResource Flat}" Content="Волна" FontSize="14" Padding="11,6" Margin="8,0,0,0" ToolTip="Вид волны: заливка или столбики" Click="WaveStyle_Click"/>

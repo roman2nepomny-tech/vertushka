@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Vertushka</AssemblyName>
     <RootNamespace>Vertushka</RootNamespace>
-    <Version>0.6.8</Version>
+    <Version>0.6.9</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <Product>Vertushka</Product>
     <SatelliteResourceLanguages>ru</SatelliteResourceLanguages>

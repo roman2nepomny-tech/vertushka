@@ -103,23 +103,51 @@ public partial class MainWindow : Window
         Wave.CueRemove += RemoveCue;
         timer.Tick += (s, e) => Tick();
         timer.Start();
-        // файл открыт двойным щелчком / «Открыть с помощью»: добавляем в текущий раздел и включаем
+        // файл открыт двойным щелчком / «Открыть с помощью»: кладём в раздел «Из проводника» и включаем
         var openFiles = Environment.GetCommandLineArgs().Skip(1).Where(a => File.Exists(a) && IsAudio(a)).ToList();
-        if (openFiles.Count > 0) Loaded += (s, e) => OpenFromArgs(openFiles);
+        if (openFiles.Count > 0) Loaded += (s, e) => OpenFiles(openFiles);
     }
 
-    async void OpenFromArgs(List<string> files)
+    const string OpenedSection = "Из проводника";
+
+    async void OpenFiles(List<string> files)
     {
-        if (shownSection == null) return;
         try
         {
-            int n = await Task.Run(() => CopyInto(files, SectionDir(shownSection)));
-            if (n > 0) RefreshAll();
-            var name = System.IO.Path.GetFileNameWithoutExtension(files[0]);
-            var song = songs.FirstOrDefault(x => x.Name == name);
+            var dir = SectionDir(OpenedSection);
+            Directory.CreateDirectory(dir);
+            // такой же файл уже лежит в разделе — второй раз не копируем
+            var toCopy = files.Where(f =>
+            {
+                var d = System.IO.Path.Combine(dir, System.IO.Path.GetFileName(f));
+                return !(File.Exists(d) && new FileInfo(d).Length == new FileInfo(f).Length);
+            }).ToList();
+            if (toCopy.Count > 0) await Task.Run(() => CopyInto(toCopy, dir));
+            // если что-то уже играет (сет идёт), музыку не трогаем и раздел не переключаем: файл просто добавлен
+            if (cur != null && cur.Out.PlaybackState == PlaybackState.Playing)
+            {
+                RefreshAll();
+                SetStatus($"Добавлено в раздел «{OpenedSection}»: включите, когда нужно");
+                return;
+            }
+            LoadSections(OpenedSection);
+            var first = files[0];
+            var nm = System.IO.Path.GetFileNameWithoutExtension(first);
+            long len = new FileInfo(first).Length;
+            var song = songs.FirstOrDefault(x => (x.Name == nm || x.Name.StartsWith(nm + " (", StringComparison.Ordinal)) && new FileInfo(x.Path).Length == len);
             if (song != null) { PlayFromList(song); TrackList.ScrollIntoView(song); }
         }
-        catch { SetStatus("Не получилось открыть файл"); }
+        catch (Exception ex) { App.LogCrash("OpenFiles", ex); SetStatus("Не получилось открыть файл"); }
+    }
+
+    // второй запуск программы передал сюда файлы (или просто «покажись»)
+    public void OnExternalOpen(List<string> lines)
+    {
+        if (closing) return;
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Activate();
+        var files = lines.Where(a => File.Exists(a) && IsAudio(a)).ToList();
+        if (files.Count > 0) OpenFiles(files);
     }
 
     // ---------- разделы и треки ----------
@@ -137,9 +165,9 @@ public partial class MainWindow : Window
     void SaveOrder(string section, IEnumerable<Song> list) =>
         WriteOrder(SectionDir(section), list.Select(s => System.IO.Path.GetFileName(s.Path)));
 
-    static void WriteOrder(string dir, IEnumerable<string> names)
+    static void WriteOrder(string dir, IEnumerable<string> names, string file = OrderFile)
     {
-        var path = System.IO.Path.Combine(dir, OrderFile);
+        var path = System.IO.Path.Combine(dir, file);
         try
         {
             if (File.Exists(path)) File.SetAttributes(path, FileAttributes.Normal);
@@ -176,16 +204,30 @@ public partial class MainWindow : Window
             .ToList();
     }
 
+    const string SectionsOrderFile = ".vertushka-sections";
+
+    // разделы в порядке, который расставил вручную; новые — в конце по времени создания
+    List<string> OrderedSectionDirs()
+    {
+        var dirs = Directory.Exists(SectionsDir) ? Directory.GetDirectories(SectionsDir).ToList() : new List<string>();
+        var order = new List<string>();
+        try { order = File.ReadAllLines(System.IO.Path.Combine(SectionsDir, SectionsOrderFile)).ToList(); } catch { }
+        var pos = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < order.Count; i++) pos.TryAdd(order[i], i);
+        return dirs.OrderBy(d => pos.TryGetValue(System.IO.Path.GetFileName(d), out var p) ? p : int.MaxValue)
+            .ThenBy(d => Directory.GetCreationTimeUtc(d)).ThenBy(d => d).ToList();
+    }
+
     void LoadSections(string select = null)
     {
         loading = true;
-        var items = (Directory.Exists(SectionsDir) ? Directory.GetDirectories(SectionsDir) : Array.Empty<string>())
-            .OrderBy(d => Directory.GetCreationTimeUtc(d)).ThenBy(d => d)
+        var items = OrderedSectionDirs()
             .Select(d => new SectionItem { Name = System.IO.Path.GetFileName(d), Count = Directory.EnumerateFiles(d).Count(IsAudio) })
             .ToList();
         SectionList.ItemsSource = items;
         var pick = items.FirstOrDefault(i => i.Name == (select ?? shownSection)) ?? items.FirstOrDefault();
         SectionList.SelectedItem = pick;
+        if (pick != null) SectionList.ScrollIntoView(pick);
         loading = false;
         if (pick != null) ShowSection(pick.Name);
         else
@@ -528,6 +570,7 @@ public partial class MainWindow : Window
                 var name = System.IO.Path.GetFileNameWithoutExtension(f);
                 var ext = System.IO.Path.GetExtension(f);
                 var dest = System.IO.Path.Combine(dir, name + ext);
+                if (File.Exists(dest) && new FileInfo(dest).Length == new FileInfo(f).Length) continue; // такой же файл уже тут
                 for (int i = 2; File.Exists(dest); i++) dest = System.IO.Path.Combine(dir, $"{name} ({i}){ext}");
                 File.Copy(f, dest);
                 n++;
@@ -621,6 +664,94 @@ public partial class MainWindow : Window
         TrackList.ScrollIntoView(sel[0]);
     }
 
+
+    // ---------- разделы: порядок, листание, папки ----------
+
+    const string SectionFmt = "VertushkaSection";
+    Point secDragStart;
+    SectionItem secDrag;
+
+    void SectionItem_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        secDragStart = e.GetPosition(null);
+        secDrag = (sender as ListBoxItem)?.DataContext as SectionItem;
+    }
+
+    void SectionItem_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || secDrag == null) return;
+        var d = e.GetPosition(null) - secDragStart;
+        if (Math.Abs(d.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(d.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+        var it = secDrag; secDrag = null;
+        DragDrop.DoDragDrop((DependencyObject)sender, new DataObject(SectionFmt, it), DragDropEffects.Move);
+    }
+
+    // раздел встаёт на место того, на который его бросили
+    void ReorderSection(string moved, string target)
+    {
+        if (moved == target) return;
+        var names = OrderedSectionDirs().Select(System.IO.Path.GetFileName).ToList();
+        int from = names.IndexOf(moved), to = names.IndexOf(target);
+        if (from < 0 || to < 0) return;
+        names.RemoveAt(from);
+        names.Insert(to, moved);
+        WriteOrder(SectionsDir, names, SectionsOrderFile);
+        LoadSections(shownSection);
+    }
+
+    void SecScroll(double delta)
+    {
+        var sv = FindScroll(SectionList);
+        if (sv != null) sv.ScrollToHorizontalOffset(Math.Clamp(sv.HorizontalOffset + delta, 0, sv.ScrollableWidth));
+    }
+
+    void SecLeft_Click(object sender, RoutedEventArgs e) => SecScroll(-260);
+    void SecRight_Click(object sender, RoutedEventArgs e) => SecScroll(260);
+
+    void SectionList_Wheel(object sender, MouseWheelEventArgs e)
+    {
+        SecScroll(-e.Delta * 0.8);
+        e.Handled = true;
+    }
+
+    // папка с треками = новый раздел с её названием (подпапки тоже забираются)
+    async void AddFolders(IEnumerable<string> folders)
+    {
+        string last = null; int total = 0, made = 0;
+        SetStatus("Копирую папки, подождите…");
+        foreach (var f in folders)
+        {
+            var name = SafeName(System.IO.Path.GetFileName(f.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar)));
+            if (name == null) continue;
+            var dir = SectionDir(name);
+            bool existed = Directory.Exists(dir);
+            int n;
+            try { n = await Task.Run(() => CopyInto(new[] { f }, dir)); }
+            catch { continue; }
+            if (n > 0) { last = name; total += n; if (!existed) made++; }
+            else if (!existed) { try { if (!Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir); } catch { } }
+        }
+        if (last == null) { SetStatus("В папке нет музыкальных файлов"); return; }
+        LoadSections(last);
+        SetStatus($"Добавлено: разделов {made}, {Plural(total, "трек", "трека", "треков")}");
+    }
+
+    // бросили файлы и папки: папки — в разделы, одиночные файлы — в раздел target
+    void DropMixed(string[] items, string target)
+    {
+        var dirs = items.Where(Directory.Exists).ToList();
+        var files = items.Where(x => !Directory.Exists(x)).ToList();
+        if (dirs.Count > 0) AddFolders(dirs);
+        if (files.Count > 0 && target != null) AddToSection(files, target);
+    }
+
+    void Strip_Drop(object sender, DragEventArgs e)
+    {
+        var f = DroppedFiles(e);
+        if (f != null) DropMixed(f, shownSection);
+        e.Handled = true;
+    }
+
     // ---------- ручной порядок треков (перетаскивание) ----------
 
     const string SongFmt = "VertushkaSong";
@@ -636,6 +767,45 @@ public partial class MainWindow : Window
         return d as T;
     }
 
+    bool sweeping;
+    int sweepAnchor, sweepLast;
+
+    void TrackList_PreviewMove(object sender, MouseEventArgs e)
+    {
+        if (!sweeping) return;
+        if (e.LeftButton != MouseButtonState.Pressed) { EndSweep(); return; }
+        var p = e.GetPosition(TrackList);
+        var sv = FindScroll(TrackList);
+        if (sv != null)
+        {
+            if (p.Y < 24) sv.ScrollToVerticalOffset(sv.VerticalOffset - 16);
+            else if (p.Y > TrackList.ActualHeight - 24) sv.ScrollToVerticalOffset(sv.VerticalOffset + 16);
+        }
+        var it = Up<ListBoxItem>(TrackList.InputHitTest(new Point(Math.Clamp(p.X, 4, Math.Max(5, TrackList.ActualWidth - 4)), Math.Clamp(p.Y, 2, Math.Max(3, TrackList.ActualHeight - 2)))) as DependencyObject);
+        if (it == null) return;
+        int idx = TrackList.Items.IndexOf(it.DataContext);
+        if (idx < 0 || idx == sweepLast) return;
+        sweepLast = idx;
+        int lo = Math.Min(sweepAnchor, idx), hi = Math.Max(sweepAnchor, idx);
+        TrackList.SelectedItems.Clear();
+        for (int i = lo; i <= hi; i++) TrackList.SelectedItems.Add(TrackList.Items[i]);
+    }
+
+    void TrackList_PreviewUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!sweeping) return;
+        EndSweep();
+        e.Handled = true;
+    }
+
+    void TrackList_LostCapture(object sender, MouseEventArgs e) { sweeping = false; }
+
+    void EndSweep()
+    {
+        sweeping = false;
+        if (TrackList.IsMouseCaptured) TrackList.ReleaseMouseCapture();
+    }
+
     ListBoxItem pendingSingle; // клик по уже выбранному треку среди нескольких: решаем при отпускании (клик или перетаскивание)
 
     void Track_MouseDown(object sender, MouseButtonEventArgs e)
@@ -645,6 +815,20 @@ public partial class MainWindow : Window
         pendingSingle = null;
         var item = sender as ListBoxItem;
         bool mod = (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0;
+        // зажать левую кнопку на номере трека и вести вниз/вверх — выделяются все треки между
+        if (item != null && !mod && e.ClickCount == 1 && e.GetPosition(item).X < 64 && SearchBox.Text.Length == 0)
+        {
+            sweepAnchor = TrackList.Items.IndexOf(item.DataContext);
+            if (sweepAnchor >= 0)
+            {
+                sweeping = true; sweepLast = sweepAnchor; dragSong = null;
+                TrackList.SelectedItems.Clear();
+                TrackList.SelectedItems.Add(item.DataContext);
+                TrackList.CaptureMouse();
+                e.Handled = true;
+                return;
+            }
+        }
         if (item != null && item.IsSelected && TrackList.SelectedItems.Count > 1 && !mod && e.ClickCount == 1)
         {
             pendingSingle = item;
@@ -766,7 +950,7 @@ public partial class MainWindow : Window
         else
         {
             var f = DroppedFiles(e);
-            if (f != null && shownSection != null) AddToSection(f, shownSection);
+            if (f != null) DropMixed(f, shownSection);
         }
         e.Handled = true;
     }
@@ -804,14 +988,15 @@ public partial class MainWindow : Window
     void Section_DragEnter(object sender, DragEventArgs e)
     {
         if (sender is not ListBoxItem i) return;
-        if (e.Data.GetDataPresent(DataFormats.FileDrop) || (e.Data.GetData(SongFmt) is Song s && i.DataContext is SectionItem si && si.Name != s.Section)) i.Tag = "drop";
+        if (e.Data.GetDataPresent(DataFormats.FileDrop) || (e.Data.GetData(SongFmt) is Song s && i.DataContext is SectionItem si && si.Name != s.Section)
+            || (e.Data.GetData(SectionFmt) is SectionItem ms && i.DataContext is SectionItem ti && ti.Name != ms.Name)) i.Tag = "drop";
     }
 
     void Section_DragLeave(object sender, DragEventArgs e) { if (sender is ListBoxItem i) i.Tag = null; }
 
     void Section_DragOver(object sender, DragEventArgs e)
     {
-        if (e.Data.GetDataPresent(SongFmt)) e.Effects = DragDropEffects.Move;
+        if (e.Data.GetDataPresent(SongFmt) || e.Data.GetDataPresent(SectionFmt)) e.Effects = DragDropEffects.Move;
         else e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
@@ -820,7 +1005,11 @@ public partial class MainWindow : Window
     {
         if (sender is not ListBoxItem i) return;
         i.Tag = null;
-        if (e.Data.GetData(SongFmt) is Song song)
+        if (e.Data.GetData(SectionFmt) is SectionItem movedSec)
+        {
+            if (i.DataContext is SectionItem tsec) ReorderSection(movedSec.Name, tsec.Name);
+        }
+        else if (e.Data.GetData(SongFmt) is Song song)
         {
             var group = e.Data.GetData(SongsFmt) as List<Song> ?? new List<Song> { song };
             if (i.DataContext is SectionItem si && si.Name != song.Section) MoveSongs(group, si.Name);
@@ -828,7 +1017,7 @@ public partial class MainWindow : Window
         else
         {
             var f = DroppedFiles(e);
-            if (f != null && i.DataContext is SectionItem s) AddToSection(f, s.Name);
+            if (f != null && i.DataContext is SectionItem s) DropMixed(f, s.Name);
         }
         e.Handled = true;
     }
@@ -1063,7 +1252,7 @@ public partial class MainWindow : Window
         if (NextClearBtn.Visibility != vis) NextClearBtn.Visibility = vis;
 
         // правая панель: сначала «Далее», если пусто — ближайшие по порядку
-        var src = upNext.Count > 0 ? upNext.Take(6).ToList() : (cur != null ? queue.Skip(qi + 1).Take(4).ToList() : new List<Song>());
+        var src = upNext.Count > 0 ? upNext.Take(300).ToList() : (cur != null ? queue.Skip(qi + 1).Take(300).ToList() : new List<Song>());
         var sig = (upNext.Count > 0 ? "u" : "q") + string.Join("|", src.Select(x => x.Path));
         if (sig == nextSig) return;
         nextSig = sig;
@@ -1172,6 +1361,26 @@ public partial class MainWindow : Window
         if (cur != null && (cur.FromNext || cur.Reader.CurrentTime.TotalSeconds - EffStart(cur) > 3)) { cur.SeekClean(EffStart(cur)); return; }
         if (qi > 0) { qi--; Start(queue[qi], true); }
     }
+
+    bool repeatOn;
+
+    void Repeat_Click(object sender, RoutedEventArgs e) => SetRepeat(RepeatBtn.IsChecked == true);
+
+    void SetRepeat(bool on)
+    {
+        repeatOn = on;
+        RepeatBtn.IsChecked = on;
+        SetStatus(on ? "Повтор трека включён: играет по кругу" : "Повтор трека выключен");
+    }
+
+    // конец трека: при включённом повторе он же заново, иначе следующий
+    void NextOrRepeat(bool cross)
+    {
+        if (repeatOn && cur != null && cur.Reader.TotalTime.TotalSeconds >= 1.0) { if (!Start(cur.Song, cross) && !cross) StopAll(); return; }
+        Next(cross);
+    }
+
+    bool HasNextOrRepeat => repeatOn || HasNextTrack;
 
     void PlayPause()
     {
@@ -1291,7 +1500,7 @@ public partial class MainWindow : Window
                 && left.TotalSeconds <= FadeFor(c) + 0.05)
             {
                 c.NextTriggered = true;
-                if (HasNextTrack) Next(true);
+                if (HasNextOrRepeat) NextOrRepeat(true);
                 else
                 {
                     // последний трек: затихает до тишины и останавливается
@@ -1303,13 +1512,13 @@ public partial class MainWindow : Window
             {
                 // дошли до метки «конец» (затухание выключено): трек заканчивается здесь
                 c.NextTriggered = true;
-                if (HasNextTrack) Next(false); else StopAll();
+                if (HasNextOrRepeat) NextOrRepeat(false); else StopAll();
             }
             else if (c.Ended)
             {
                 // отключили устройство — стоим и говорим об этом; иначе трек закончился (даже если файл короче, чем написано в заголовке) — идём дальше
                 if (c.StopError != null) { App.LogCrash("Stop", c.StopError); StopAll(); SetStatus("Звук остановился: проверьте наушники и устройство вывода"); }
-                else if (HasNextTrack) Next(false);
+                else if (HasNextOrRepeat) NextOrRepeat(false);
                 else StopAll();
             }
         }
@@ -1663,6 +1872,7 @@ public partial class MainWindow : Window
                 if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) SetCue(e.Key - Key.F1); else JumpCue(e.Key - Key.F1);
                 break;
             case Key.L when !ctrl: Loop_Click(null, null); break;
+            case Key.T when !ctrl: SetRepeat(!repeatOn); break;
             case Key.D when !ctrl: Duck_Click(null, null); break;
             case Key.Enter:
                 if (TrackList.SelectedItem is Song s) PlayFromList(s); else return;
