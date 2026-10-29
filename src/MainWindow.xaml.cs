@@ -53,7 +53,7 @@ public partial class MainWindow : Window
 
     // запись
     bool recording;
-    WaveInEvent micIn;
+    IWaveIn micIn;
     WasapiLoopbackCapture loop;
     WaveFileWriter writer;
     BufferedWaveProvider micBuf, loopBuf;
@@ -1764,6 +1764,100 @@ public partial class MainWindow : Window
         if (recording) StopRecording(); else StartRecording();
     }
 
+    // ---------- микрофон: WASAPI (блютуз-гарнитура не «икает» остальным звуком, как со старым WaveIn) ----------
+
+    int recMicDev = -1;
+    WaveFormat micSrcFmt;
+    Action<byte[], int> micSink;
+
+    // устройство записи Windows по номеру из списка WaveIn (имя там обрезано до 31 знака); -1 — по умолчанию
+    MMDevice MicEndpoint(int idx)
+    {
+        try
+        {
+            using var en = new MMDeviceEnumerator();
+            if (idx >= 0)
+            {
+                string pn = WaveInEvent.GetCapabilities(idx).ProductName;
+                foreach (var d in en.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active))
+                    if (pn.Length > 0 && d.FriendlyName.Length > 0 && (d.FriendlyName.StartsWith(pn, StringComparison.OrdinalIgnoreCase) || pn.StartsWith(d.FriendlyName, StringComparison.OrdinalIgnoreCase))) return d;
+                return null; // выбранный микрофон не нашли среди устройств WASAPI: пишем через WaveIn именно с него, а не с «по умолчанию»
+            }
+            return en.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Console);
+        }
+        catch { return null; }
+    }
+
+    // создаёт (не запускает) устройство записи: сначала WASAPI, не вышло — прежний WaveIn
+    void OpenMic(int micDev)
+    {
+        recMicDev = micDev;
+        try
+        {
+            var d = MicEndpoint(micDev);
+            if (d != null) { micIn = new WasapiCapture(d, false, 100); WireMic(); return; }
+        }
+        catch { micIn = null; }
+        micIn = new WaveInEvent { DeviceNumber = micDev, WaveFormat = new WaveFormat(44100, 16, 1) };
+        WireMic();
+    }
+
+    void WireMic()
+    {
+        var m = micIn;
+        micSrcFmt = m.WaveFormat;
+        m.DataAvailable += (s, a) =>
+        {
+            var cv = ToMono16(a.Buffer, a.BytesRecorded, micSrcFmt);
+            if (cv != null) micSink?.Invoke(cv, cv.Length);
+        };
+        m.RecordingStopped += Rec_DeviceStopped;
+    }
+
+    // запуск; WASAPI не стартовал — переходим на WaveIn с тем же числом отсчётов в секунду
+    void StartMic(Action<byte[], int> sink)
+    {
+        micSink = sink;
+        try { micIn.StartRecording(); return; }
+        catch when (micIn is WasapiCapture)
+        {
+            int rate = micIn.WaveFormat.SampleRate;
+            try { micIn.Dispose(); } catch { }
+            micIn = new WaveInEvent { DeviceNumber = recMicDev, WaveFormat = new WaveFormat(rate, 16, 1) };
+            WireMic();
+            micIn.StartRecording();
+        }
+    }
+
+    // любой формат микрофона → 16 бит, моно, та же частота
+    static byte[] ToMono16(byte[] buf, int n, WaveFormat f)
+    {
+        if (f is WaveFormatExtensible ext) f = ext.ToStandardWaveFormat();
+        int ch = Math.Max(1, f.Channels), bytes = Math.Max(1, f.BitsPerSample / 8), frame = ch * bytes;
+        int frames = n / frame;
+        var o = new byte[frames * 2];
+        for (int i = 0; i < frames; i++)
+        {
+            float sum = 0;
+            for (int c = 0; c < ch; c++)
+            {
+                int p = i * frame + c * bytes;
+                float v;
+                if (f.Encoding == WaveFormatEncoding.IeeeFloat && bytes == 4) v = BitConverter.ToSingle(buf, p);
+                else if (f.Encoding == WaveFormatEncoding.Pcm && bytes == 2) v = BitConverter.ToInt16(buf, p) / 32768f;
+                else if (f.Encoding == WaveFormatEncoding.Pcm && bytes == 3) v = ((buf[p + 2] << 24) | (buf[p + 1] << 16) | (buf[p] << 8)) / 2147483648f;
+                else if (f.Encoding == WaveFormatEncoding.Pcm && bytes == 4) v = BitConverter.ToInt32(buf, p) / 2147483648f;
+                else return null;
+                sum += v;
+            }
+            float mv = sum / ch;
+            if (float.IsNaN(mv)) mv = 0f;
+            short s = (short)Math.Clamp(mv * 32767f, -32768f, 32767f);
+            o[i * 2] = (byte)(s & 0xFF); o[i * 2 + 1] = (byte)((s >> 8) & 0xFF);
+        }
+        return o;
+    }
+
     void StartRecording()
     {
         if (recording) return;
@@ -1778,30 +1872,29 @@ public partial class MainWindow : Window
         {
             if (!withMusic)
             {
-                micIn = new WaveInEvent { DeviceNumber = micDev, WaveFormat = new WaveFormat(44100, 16, 1) };
-                writer = new WaveFileWriter(recPath, micIn.WaveFormat);
-                micIn.DataAvailable += (s, a) => { lock (recLock) { try { writer?.Write(a.Buffer, 0, a.BytesRecorded); } catch { } } };
-                micIn.RecordingStopped += Rec_DeviceStopped;
-                micIn.StartRecording();
+                OpenMic(micDev);
+                writer = new WaveFileWriter(recPath, new WaveFormat(micIn.WaveFormat.SampleRate, 16, 1));
+                StartMic((b, n) => { lock (recLock) { try { writer?.Write(b, 0, n); } catch { } } });
             }
             else
             {
                 loop = new WasapiLoopbackCapture();
                 var lf = loop.WaveFormat;
                 if (lf.Channels > 2) throw new InvalidOperationException("surround");
-                micIn = new WaveInEvent { DeviceNumber = micDev, WaveFormat = new WaveFormat(lf.SampleRate, 16, 1) };
+                OpenMic(micDev);
+                int micRate = micIn.WaveFormat.SampleRate;
                 loopBuf = new BufferedWaveProvider(lf) { DiscardOnBufferOverflow = true, ReadFully = true, BufferDuration = TimeSpan.FromSeconds(5) };
-                micBuf = new BufferedWaveProvider(micIn.WaveFormat) { DiscardOnBufferOverflow = true, ReadFully = true, BufferDuration = TimeSpan.FromSeconds(5) };
+                micBuf = new BufferedWaveProvider(new WaveFormat(micRate, 16, 1)) { DiscardOnBufferOverflow = true, ReadFully = true, BufferDuration = TimeSpan.FromSeconds(5) };
                 ISampleProvider music = loopBuf.ToSampleProvider();
                 if (lf.Channels == 1) music = new MonoToStereoSampleProvider(music);
-                ISampleProvider voice = new MonoToStereoSampleProvider(micBuf.ToSampleProvider());
+                ISampleProvider voiceMono = micBuf.ToSampleProvider();
+                if (micRate != lf.SampleRate) voiceMono = new WdlResamplingSampleProvider(voiceMono, lf.SampleRate);
+                ISampleProvider voice = new MonoToStereoSampleProvider(voiceMono);
                 mixer = new MixingSampleProvider(new[] { music, voice }) { ReadFully = true };
                 writer = new WaveFileWriter(recPath, new WaveFormat(lf.SampleRate, 16, 2));
                 var lb = loopBuf; var mb = micBuf; // свои ссылки: поля обнуляются при остановке записи
                 loop.DataAvailable += (s, a) => { try { lb.AddSamples(a.Buffer, 0, a.BytesRecorded); } catch { } };
-                micIn.DataAvailable += (s, a) => { try { mb.AddSamples(a.Buffer, 0, a.BytesRecorded); } catch { } };
                 loop.RecordingStopped += Rec_DeviceStopped;
-                micIn.RecordingStopped += Rec_DeviceStopped;
                 recFrames = 0;
                 recWatch = System.Diagnostics.Stopwatch.StartNew();
                 int rate = lf.SampleRate;
@@ -1823,7 +1916,7 @@ public partial class MainWindow : Window
                     }
                 }, null, 50, 50);
                 loop.StartRecording();
-                micIn.StartRecording();
+                StartMic((b, n) => { try { mb.AddSamples(b, 0, n); } catch { } });
             }
         }
         catch (Exception)
