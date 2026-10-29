@@ -408,6 +408,7 @@
         <Border x:Name="TrimBar" Grid.Row="0" Visibility="Collapsed" Margin="0,12,0,0" Background="{DynamicResource AccentDim}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="16" Padding="12,6">
           <DockPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+              <ToggleButton x:Name="SnapTgl" Style="{StaticResource Flat}" Content="К тихому месту" FontSize="16" Padding="14,10" Margin="0,0,8,0" Click="Snap_Click" ToolTip="Метка сама сдвигается в ближайшее самое тихое место (в пределах 1,5 с), чтобы не резать звук посередине"/>
               <Button Style="{StaticResource Flat}" Content="Начало" FontSize="17" Padding="18,10" Margin="0,0,8,0" Click="TrimStart_Click" ToolTip="Поставить начало трека в этом месте"/>
               <Button Style="{StaticResource Flat}" Content="Конец" FontSize="17" Padding="18,10" Margin="0,0,8,0" Click="TrimEnd_Click" ToolTip="Поставить конец трека в этом месте"/>
               <Button Style="{StaticResource Flat}" Content="Сбросить обрезку" FontSize="16" Padding="14,10" Margin="0,0,8,0" Click="TrimReset_Click" ToolTip="Вернуть трек целиком"/>

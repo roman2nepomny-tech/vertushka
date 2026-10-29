@@ -87,6 +87,7 @@ public partial class MainWindow : Window
         SetCompact(cfg.Compact);
         SetCards(cfg.Cards);
         SetWaveStyle(!cfg.WaveBars);
+        SnapTgl.IsChecked = cfg.SnapQuiet;
         ready = true;
         LoadSections(LastSec());
         if (cfg.MiniOpen) Dispatcher.BeginInvoke(OpenMini);
@@ -1645,7 +1646,7 @@ public partial class MainWindow : Window
     // ---------- метки на волне ----------
 
     // i = -1: первая свободная; иначе — на этот номер (поверх старой)
-    void SetCue(int i)
+    async void SetCue(int i)
     {
         if (cur == null) { SetStatus("Метка: сначала включите трек"); return; }
         if (i < 0)
@@ -1653,10 +1654,32 @@ public partial class MainWindow : Window
             i = Array.FindIndex(cueSec, v => v < 0);
             if (i < 0) { SetStatus("Все 4 метки заняты: правый клик по флажку убирает, Shift+F1…F4 — заменить"); return; }
         }
-        cueSec[i] = cur.Reader.CurrentTime.TotalSeconds;
-        Cues.Save(cur.Song.Path, cueSec);
+        var slot = cur;
+        double raw = slot.Reader.CurrentTime.TotalSeconds;
+        double at = await Snap(slot.Song.Path, raw);
+        if (cur != slot) return; // за время поиска включили другой трек
+        cueSec[i] = at;
+        Cues.Save(slot.Song.Path, cueSec);
         Wave.Cues = cueSec;
-        SetStatus($"Метка {i + 1}: {Fmt(TimeSpan.FromSeconds(cueSec[i]))}");
+        SetStatus($"Метка {i + 1}: {Fmt(TimeSpan.FromSeconds(at))}{SnapNote(raw, at)}");
+    }
+
+    // ближайшее самое тихое место возле секунды pos (если включено); при ошибке — сама секунда
+    async Task<double> Snap(string path, double pos)
+    {
+        if (!cfg.SnapQuiet) return pos;
+        try { return await Task.Run(() => Quiet.Find(path, pos)); }
+        catch { return pos; }
+    }
+
+    static string SnapNote(double raw, double at) =>
+        Math.Abs(at - raw) < 0.05 ? "" : $" (сдвинута в тихое место: {(at < raw ? "−" : "+")}{Math.Abs(at - raw):0.0} с)";
+
+    void Snap_Click(object sender, RoutedEventArgs e)
+    {
+        cfg.SnapQuiet = SnapTgl.IsChecked == true;
+        cfg.Save();
+        SetStatus(cfg.SnapQuiet ? "Метки будут прилипать к ближайшему тихому месту" : "Метки ставятся точно там, где нажали");
     }
 
     void JumpCue(int i)
@@ -1754,6 +1777,9 @@ public partial class MainWindow : Window
             phones.Items.Add(it);
         }
         m.Items.Add(phones);
+        var snap = new MenuItem { Header = "Метки к ближайшему тихому месту", IsChecked = cfg.SnapQuiet };
+        snap.Click += (a, b) => { cfg.SnapQuiet = !cfg.SnapQuiet; cfg.Save(); SnapTgl.IsChecked = cfg.SnapQuiet; SetStatus(cfg.SnapQuiet ? "Метки будут прилипать к ближайшему тихому месту" : "Метки ставятся точно там, где нажали"); };
+        m.Items.Add(snap);
         var wave = new MenuItem { Header = cfg.WaveBars ? "Волна: заливкой" : "Волна: столбиками" };
         wave.Click += (a, b) => SetWaveStyle(cfg.WaveBars);
         var top = new MenuItem { Header = "Поверх окон", IsChecked = TopTgl.IsChecked == true };
@@ -1840,10 +1866,13 @@ public partial class MainWindow : Window
     void TrimStart_Click(object sender, RoutedEventArgs e) => MarkTrim(true);
     void TrimEnd_Click(object sender, RoutedEventArgs e) => MarkTrim(false);
 
-    void MarkTrim(bool isStart)
+    async void MarkTrim(bool isStart)
     {
         if (cur == null) { SetStatus("Сначала включите трек"); return; }
-        double pos = Math.Round(cur.Reader.CurrentTime.TotalSeconds, 2);
+        var slot = cur;
+        double raw = Math.Round(slot.Reader.CurrentTime.TotalSeconds, 2);
+        double pos = Math.Round(await Snap(slot.Song.Path, raw), 2);
+        if (cur != slot) return; // за время поиска включили другой трек
         if (isStart)
         {
             if (cur.TrimEnd > 0 && pos >= cur.TrimEnd - 0.5) { SetStatus("Начало должно быть раньше конца: сначала передвиньте «Конец»"); return; }
@@ -1856,7 +1885,7 @@ public partial class MainWindow : Window
         }
         Trims.Save(cur.Song.Path, cur.TrimStart, cur.TrimEnd);
         ShowTrim();
-        SetStatus($"{(isStart ? "Начало" : "Конец")} трека: {Fmt(TimeSpan.FromSeconds(pos))}");
+        SetStatus($"{(isStart ? "Начало" : "Конец")} трека: {Fmt(TimeSpan.FromSeconds(pos))}{SnapNote(raw, pos)}");
     }
 
     void TrimReset_Click(object sender, RoutedEventArgs e)
