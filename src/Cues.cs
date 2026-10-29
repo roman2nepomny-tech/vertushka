@@ -18,27 +18,30 @@ public static class Cues
         catch { return path.ToLowerInvariant(); }
     }
 
-    static void Load()
+    // false — файл сейчас занят (антивирус, другая программа): не считаем его пустым, чтобы потом не затереть
+    static bool Load()
     {
-        if (all != null) return;
-        try { all = JsonSerializer.Deserialize<Dictionary<string, double[]>>(File.ReadAllText(FilePath)) ?? new(); }
-        catch (FileNotFoundException) { all = new(); }
-        catch (DirectoryNotFoundException) { all = new(); }
+        if (all != null) return true;
+        try { all = JsonSerializer.Deserialize<Dictionary<string, double[]>>(File.ReadAllText(FilePath)) ?? new(); return true; }
+        catch (FileNotFoundException) { all = new(); return true; }
+        catch (DirectoryNotFoundException) { all = new(); return true; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
         catch
         {
             // повреждённый файл не затираем молча: оставляем копию
             try { File.Copy(FilePath, FilePath + ".broken", true); } catch { }
             all = new();
+            return true;
         }
     }
 
     // метки трека: секунды, -1 — метки нет
     public static double[] Get(string path)
     {
-        Load();
+        bool loaded = Load();
         var r = new double[Count];
         Array.Fill(r, -1.0);
-        if (all.TryGetValue(Key(path), out var v))
+        if (loaded && all.TryGetValue(Key(path), out var v))
             for (int i = 0; i < Count && i < v.Length; i++) r[i] = v[i];
         return r;
     }
@@ -51,9 +54,9 @@ public static class Cues
         return c;
     }
 
-    public static void Save(string path, double[] cues)
+    public static bool Save(string path, double[] cues)
     {
-        Load();
+        if (!Load()) return false;
         var k = Key(path);
         if (cues.All(c => c < 0)) all.Remove(k); else all[k] = (double[])cues.Clone();
         try
@@ -62,7 +65,8 @@ public static class Cues
             var tmp = FilePath + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(all));
             File.Move(tmp, FilePath, true);
+            return true;
         }
-        catch { }
+        catch { return false; }
     }
 }

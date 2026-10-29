@@ -7,7 +7,7 @@ using NAudio.Wave;
 
 namespace Vertushka;
 
-// Обрезка трека в новый файл: mp3 режем по кадрам без потери качества, остальное сохраняем как WAV.
+// Обрезка трека в новый файл: mp3 режем по кадрам без потери качества, остальное сохраняем как WAV 16 бит.
 public static class Trimmer
 {
     public static string UniquePath(string dir, string name)
@@ -39,12 +39,6 @@ public static class Trimmer
 
     static void TrimMp3(string src, double start, double end, string dest)
     {
-        try { TrimMp3Core(src, start, end, dest); }
-        catch { try { File.Delete(dest); } catch { } throw; } // пустой огрызок в разделе не оставляем
-    }
-
-    static void TrimMp3Core(string src, double start, double end, string dest)
-    {
         using var r = new Mp3FileReader(src);
         using var fs = File.Create(dest);
         double t = 0; int written = 0;
@@ -68,34 +62,14 @@ public static class Trimmer
         bytes -= bytes % p16.WaveFormat.BlockAlign;
         using var w = new WaveFileWriter(dest, p16.WaveFormat);
         var buf = new byte[p16.WaveFormat.AverageBytesPerSecond / 2 - (p16.WaveFormat.AverageBytesPerSecond / 2) % p16.WaveFormat.BlockAlign];
-        long left = bytes;
+        long left = bytes, written = 0;
         while (left > 0)
         {
             int n = p16.Read(buf, 0, (int)Math.Min(buf.Length, left));
             if (n <= 0) break;
             w.Write(buf, 0, n);
-            left -= n;
+            left -= n; written += n;
         }
-    }
-
-    public static string Fmt(double sec)
-    {
-        var t = TimeSpan.FromSeconds(Math.Max(0, sec));
-        return $"{(int)t.TotalMinutes}:{t.Seconds:00}.{t.Milliseconds / 100}";
-    }
-
-    // «1:23», «1:23,4», «83» → секунды; не разобрали — null
-    public static double? Parse(string s)
-    {
-        s = (s ?? "").Trim().Replace(',', '.');
-        if (s == "") return null;
-        var parts = s.Split(':');
-        double total = 0;
-        foreach (var p in parts)
-        {
-            if (!double.TryParse(p, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) || v < 0 || !double.IsFinite(v)) return null;
-            total = total * 60 + v;
-        }
-        return total;
+        if (written == 0) throw new InvalidOperationException("В этом куске нет звука");
     }
 }

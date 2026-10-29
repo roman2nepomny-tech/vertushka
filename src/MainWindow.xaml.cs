@@ -94,6 +94,7 @@ public partial class MainWindow : Window
 
         Wave.Scrub += Wave_Scrub;
         ZoomWave.Scrub += ZoomScrub;
+        TrackList.SelectionChanged += (s, e) => { int n = TrackList.SelectedItems.Count; if (n > 1) SetStatus($"Выбрано треков: {n}. Перетащите их мышью или правый клик"); };
         ZoomWave.MouseWheel += (s, e) => { if (e.Delta > 0) ZoomStep(1); else ZoomStep(-1); e.Handled = true; };
         Wave.CueJump += JumpCue;
         Wave.CueRemove += RemoveCue;
@@ -774,7 +775,7 @@ public partial class MainWindow : Window
             ql.Click += (a, b) => { foreach (var x in sel) { upNext.RemoveAll(u => u.Path == x.Path); upNext.Add(x); } SetStatus($"В конец очереди: {n} треков"); MarkPlaying(); };
             m.Items.Add(ql);
             var mv = new MenuItem { Header = $"Переместить в раздел ({n})" };
-            foreach (var sName in Directory.GetDirectories(SectionsDir).Select(System.IO.Path.GetFileName).Where(x => x != song.Section))
+            foreach (var sName in SectionDirs().Select(System.IO.Path.GetFileName).Where(x => x != song.Section))
             {
                 var target = sName;
                 var it = new MenuItem { Header = target };
@@ -807,7 +808,7 @@ public partial class MainWindow : Window
             m.Items.Add(un);
         }
         var move =new MenuItem { Header = "Переместить в раздел" };
-        foreach (var s in Directory.GetDirectories(SectionsDir).Select(System.IO.Path.GetFileName).Where(n => n != song.Section))
+        foreach (var s in SectionDirs().Select(System.IO.Path.GetFileName).Where(n => n != song.Section))
         {
             var target = s;
             var it = new MenuItem { Header = target };
@@ -836,6 +837,12 @@ public partial class MainWindow : Window
         TrackList.ContextMenu = m;
     }
 
+    string[] SectionDirs()
+    {
+        try { return Directory.Exists(SectionsDir) ? Directory.GetDirectories(SectionsDir) : Array.Empty<string>(); }
+        catch { return Array.Empty<string>(); }
+    }
+
     // несколько треков сразу в другой раздел
     void MoveSongs(List<Song> list, string target)
     {
@@ -843,7 +850,7 @@ public partial class MainWindow : Window
         int ok = 0;
         foreach (var s in list) if (MoveSong(s, target, false)) ok++;
         RefreshAll();
-        SetStatus(ok == list.Count ? $"Перемещено треков: {ok} → «{target}»" : $"Перемещено {ok} из {list.Count} (играющий трек не двигается)");
+        SetStatus(ok == list.Count ? $"Перемещено треков: {ok} → «{target}»" : $"Перемещено {ok} из {list.Count} (играющий трек или занятый файл не двигается)");
     }
 
     bool MoveSong(Song s, string target, bool refresh = true)
@@ -857,52 +864,56 @@ public partial class MainWindow : Window
             var movedTrim = Trims.Take(s.Path);
             try { File.Move(s.Path, dest); }
             catch { Cues.Save(s.Path, moved); Trims.Save(s.Path, movedTrim[0], movedTrim[1]); throw; }
-            Cues.Save(dest, moved);
-            Trims.Save(dest, movedTrim[0], movedTrim[1]);
+            bool dataSaved = Cues.Save(dest, moved) & Trims.Save(dest, movedTrim[0], movedTrim[1]);
             RemoveFromNext(s.Path);
             File.SetCreationTimeUtc(dest, DateTime.UtcNow); // чтобы встал в конец раздела
             ForgetInOrder(s.Section, System.IO.Path.GetFileName(s.Path));
             ForgetInOrder(target, System.IO.Path.GetFileName(dest));
-            if (refresh) { SetStatus($"«{s.Name}» перемещён в «{target}»"); RefreshAll(); }
+            if (refresh) { SetStatus($"«{s.Name}» перемещён в «{target}»" + (dataSaved ? "" : " (метки и обрезка не сохранились: файл данных занят)")); RefreshAll(); }
             return true;
         }
-        catch { if (refresh) SetStatus("Не получилось: этот трек сейчас играет. Включите другой и повторите"); return false; }
+        catch (Exception ex)
+        {
+            if (refresh) SetStatus(cur != null && cur.Song.Path == s.Path ? "Не получилось: этот трек сейчас играет. Включите другой и повторите" : "Не получилось переместить: " + ex.Message);
+            return false;
+        }
+    }
+
+    static bool IsLocked(string path)
+    {
+        try { using var f = File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None); return false; }
+        catch (IOException) { return true; }
+        catch { return false; }
+    }
+
+    // убрать файл в корзину вместе с метками и обрезкой; играющий или занятый файл не трогаем (и без системного окна «файл занят»)
+    bool TryRecycle(Song s)
+    {
+        if (cur != null && cur.Song.Path == s.Path) return false;
+        if (IsLocked(s.Path)) return false;
+        var goneCues = Cues.Take(s.Path);
+        var goneTrim = Trims.Take(s.Path);
+        try { FileSystem.DeleteFile(s.Path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin); }
+        catch { Cues.Save(s.Path, goneCues); Trims.Save(s.Path, goneTrim[0], goneTrim[1]); return false; }
+        RemoveFromNext(s.Path);
+        ForgetInOrder(s.Section, System.IO.Path.GetFileName(s.Path));
+        return true;
     }
 
     void DeleteSongs(List<Song> list)
     {
         if (MessageBox.Show(this, $"Убрать из раздела треки: {list.Count}?\nФайлы уйдут в корзину.", "Удаление треков", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         int ok = 0;
-        foreach (var s in list)
-        {
-            try
-            {
-                var gone = Cues.Take(s.Path); Trims.Take(s.Path);
-                try { FileSystem.DeleteFile(s.Path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin); }
-                catch { Cues.Save(s.Path, gone); throw; }
-                RemoveFromNext(s.Path);
-                ForgetInOrder(s.Section, System.IO.Path.GetFileName(s.Path));
-                ok++;
-            }
-            catch { }
-        }
+        foreach (var s in list) if (TryRecycle(s)) ok++;
         RefreshAll();
-        SetStatus(ok == list.Count ? $"Убрано треков: {ok}" : $"Убрано {ok} из {list.Count} (играющий трек не убирается)");
+        SetStatus(ok == list.Count ? $"Убрано треков: {ok}" : $"Убрано {ok} из {list.Count} (играющий или занятый файл не убирается)");
     }
 
     void DeleteSong(Song s)
     {
         if (MessageBox.Show(this, $"Убрать «{s.Name}» из раздела?\nФайл уйдёт в корзину.", "Удаление трека", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-        try
-        {
-            var gone = Cues.Take(s.Path); Trims.Take(s.Path);
-            try { FileSystem.DeleteFile(s.Path, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin); }
-            catch { Cues.Save(s.Path, gone); throw; }
-            RemoveFromNext(s.Path);
-            ForgetInOrder(s.Section, System.IO.Path.GetFileName(s.Path));
-            RefreshAll();
-        }
-        catch { SetStatus("Не получилось: этот трек сейчас играет"); }
+        if (TryRecycle(s)) RefreshAll();
+        else SetStatus("Не получилось: файл играет или занят другой программой");
     }
 
     // ---------- плеер ----------
@@ -1007,7 +1018,7 @@ public partial class MainWindow : Window
             ns = new Slot(s) { FromNext = viaNext };
             var tr = Trims.Get(s.Path);
             ns.TrimStart = tr[0]; ns.TrimEnd = tr[1];
-            if (ns.TrimStart > 0.05) ns.Seek(TimeSpan.FromSeconds(ns.TrimStart)); // играет от метки «начало»
+            if (ns.TrimStart > 0.05) ns.SeekClean(ns.TrimStart); // играет от метки «начало», без щелчка
             var old = cur;
             bool doFade = cross && old != null && Crossfade > 0 && old.Out.PlaybackState == PlaybackState.Playing;
             // старый трек уходит за оставшееся время, но не дольше выбранного затухания
@@ -1070,7 +1081,7 @@ public partial class MainWindow : Window
 
     void Prev()
     {
-        if (cur != null && (cur.FromNext || cur.Reader.CurrentTime.TotalSeconds - EffStart(cur) > 3)) { cur.Seek(TimeSpan.FromSeconds(EffStart(cur))); return; }
+        if (cur != null && (cur.FromNext || cur.Reader.CurrentTime.TotalSeconds - EffStart(cur) > 3)) { cur.SeekClean(EffStart(cur)); return; }
         if (qi > 0) { qi--; Start(queue[qi], true); }
     }
 
@@ -1170,7 +1181,7 @@ public partial class MainWindow : Window
                 shown.Progress = r.CurrentTime.TotalSeconds / Math.Max(1, r.TotalTime.TotalSeconds);
                 shown.Paused = st == PlaybackState.Paused;
             }
-            if (loopOn && !seeking && r.CurrentTime.TotalSeconds >= loopStart + cfg.LoopLen) c.Seek(TimeSpan.FromSeconds(loopStart));
+            if (loopOn && !seeking && r.CurrentTime.TotalSeconds >= loopStart + cfg.LoopLen) c.SeekClean(loopStart);
             double totSec = Math.Max(1, r.TotalTime.TotalSeconds);
             Wave.SetLoop(loopOn ? loopStart / totSec : -1, loopOn ? Math.Min(1, (loopStart + cfg.LoopLen) / totSec) : -1);
             Wave.Duration = r.TotalTime.TotalSeconds;
@@ -1244,7 +1255,7 @@ public partial class MainWindow : Window
         {
             // вне режима обрезки перематывать можно только внутри «начало … конец»
             double lo = EffStart(cur), hi = Math.Max(lo, EffEnd(cur) - 0.1);
-            cur.Seek(TimeSpan.FromSeconds(Math.Max(lo, Math.Min(frac * cur.Reader.TotalTime.TotalSeconds, hi))));
+            cur.SeekClean(Math.Max(lo, Math.Min(frac * cur.Reader.TotalTime.TotalSeconds, hi)));
             // перемотали за пределы петли — петля выключается (иначе она тут же вернёт назад)
             if (loopOn && (cur.Reader.CurrentTime.TotalSeconds < loopStart - 0.3 || cur.Reader.CurrentTime.TotalSeconds > loopStart + cfg.LoopLen + 0.3))
             { SetLoopOn(false); SetStatus("Петля выключена"); }
@@ -1580,7 +1591,7 @@ public partial class MainWindow : Window
     void Loop_Click(object sender, RoutedEventArgs e)
     {
         if (loopOn || cur == null) { SetLoopOn(false); if (cur == null) SetStatus("Петля: сначала включите трек"); return; }
-        loopStart = Math.Min(cur.Reader.CurrentTime.TotalSeconds, Math.Max(0, cur.Reader.TotalTime.TotalSeconds - cfg.LoopLen));
+        loopStart = Math.Max(EffStart(cur), Math.Min(cur.Reader.CurrentTime.TotalSeconds, Math.Max(0, EffEnd(cur) - cfg.LoopLen)));
         SetLoopOn(true);
         SetStatus($"Петля {cfg.LoopLen} с с места {Fmt(TimeSpan.FromSeconds(loopStart))}");
     }
@@ -1666,7 +1677,7 @@ public partial class MainWindow : Window
     {
         if (cur == null || i < 0 || i >= cueSec.Length) return;
         if (cueSec[i] < 0) { SetStatus($"Метка {i + 1} не поставлена (Shift+F{i + 1})"); return; }
-        cur.Seek(TimeSpan.FromSeconds(Math.Min(cueSec[i], cur.Reader.TotalTime.TotalSeconds - 0.1)));
+        cur.SeekClean(Math.Min(cueSec[i], cur.Reader.TotalTime.TotalSeconds - 0.1));
         if (loopOn) SetLoopOn(false);
         // из зоны затухания последнего трека вернулись — звук должен вернуться
         if (cur.NextTriggered && cur.OnZero != null && Remain(cur) > FadeFor(cur) + 0.5)
@@ -1789,6 +1800,7 @@ public partial class MainWindow : Window
             Wave.SetTrim(-1, -1, false);
             TrimBar.Visibility = Visibility.Collapsed;
             ZoomBox.Visibility = Visibility.Collapsed;
+            Plate.BorderBrush = (Brush)FindResource("Line"); Plate.BorderThickness = new Thickness(1);
             RightPanel.Visibility = Visibility.Visible; RightCol.Width = new GridLength(268); GapCol.Width = new GridLength(16);
             JingleRow.Visibility = Visibility.Visible;
             NowCard.Visibility = cfg.Compact ? Visibility.Collapsed : Visibility.Visible;
@@ -1799,6 +1811,8 @@ public partial class MainWindow : Window
         TrimBar.Visibility = trimEdit ? Visibility.Visible : Visibility.Collapsed;
         JingleRow.Visibility = trimEdit ? Visibility.Collapsed : Visibility.Visible; // место под панель обрезки
         ZoomBox.Visibility = TrimBar.Visibility;
+        Plate.BorderBrush = (Brush)FindResource(trimEdit ? "Accent" : "Line"); // рамка всей плиты: видно издалека, что идёт обрезка
+        Plate.BorderThickness = new Thickness(trimEdit ? 2.5 : 1);
         RightPanel.Visibility = trimEdit ? Visibility.Collapsed : Visibility.Visible; // «Далее», петля и «Поклон» на время обрезки не нужны
         RightCol.Width = new GridLength(trimEdit ? 0 : 268); GapCol.Width = new GridLength(trimEdit ? 0 : 16);
         NowCard.Visibility = trimEdit || cfg.Compact ? Visibility.Collapsed : Visibility.Visible; // и под приближенную волну
@@ -1809,6 +1823,8 @@ public partial class MainWindow : Window
             string a = cur.TrimStart >= 0 ? Fmt(TimeSpan.FromSeconds(cur.TrimStart)) : "не задано";
             string b = cur.TrimEnd > 0 ? Fmt(TimeSpan.FromSeconds(cur.TrimEnd)) : "не задан";
             TrimHint.Text = $"Начало: {a}  ·  Конец: {b}";
+            StartBtn.Content = "Начало  " + (cur.TrimStart >= 0 ? a : "—");
+            EndBtn.Content = "Конец  " + (cur.TrimEnd > 0 ? b : "—");
             zoomWinLen = -1; // заново подобрать окно
             UpdateZoom(cur.Reader.CurrentTime.TotalSeconds);
         }
@@ -1903,6 +1919,7 @@ public partial class MainWindow : Window
         int id = ++zoomReq;
         string path = slot.Song.Path;
         ZoomWave.Loading = true;
+        ZoomWave.Peaks = null; // старые пики не показываем под новым окном
         var peaks = await Task.Run(() => WaveformCache.Window(path, start, len));
         if (id != zoomReq || cur != slot) return;
         ZoomWave.Peaks = peaks;
@@ -1915,7 +1932,7 @@ public partial class MainWindow : Window
         if (!done) return;
         double tot = cur.Reader.TotalTime.TotalSeconds;
         double t = zoomStart + frac * Math.Max(0.1, zoomWinLen);
-        cur.Seek(TimeSpan.FromSeconds(Math.Clamp(t, 0, Math.Max(0, tot - 0.1))));
+        cur.SeekClean(Math.Clamp(t, 0, Math.Max(0, tot - 0.1)));
         zoomUser = true;
     }
 
@@ -1957,7 +1974,7 @@ public partial class MainWindow : Window
         if (cur != null)
         {
             double p = cur.Reader.CurrentTime.TotalSeconds;
-            if (p < EffStart(cur) || p > EffEnd(cur) - 0.1) cur.Seek(TimeSpan.FromSeconds(EffStart(cur)));
+            if (p < EffStart(cur) || p > EffEnd(cur) - 0.1) cur.SeekClean(EffStart(cur));
             if (cur.TrimStart >= 0 || cur.TrimEnd > 0) SetStatus("Обрезка сохранена: трек играет от «Начало» до «Конец»");
         }
     }

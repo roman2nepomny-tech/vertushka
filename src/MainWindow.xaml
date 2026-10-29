@@ -55,14 +55,14 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="ListBoxItem">
-            <Border x:Name="B" CornerRadius="16" Padding="14,11" Background="Transparent">
+            <Border x:Name="B" CornerRadius="16" Padding="14,11" Background="Transparent" BorderThickness="1.5" BorderBrush="Transparent">
               <Grid>
                 <Rectangle x:Name="Bar" Width="4" Height="26" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="-9,0,0,0" RadiusX="2" RadiusY="2" Fill="{DynamicResource Accent}" Visibility="Collapsed"/>
                 <Rectangle x:Name="LineTop" Height="3" VerticalAlignment="Top" Margin="-14,-11,-14,0" Fill="{DynamicResource Accent}" Visibility="Collapsed"/>
                 <Rectangle x:Name="LineBottom" Height="3" VerticalAlignment="Bottom" Margin="-14,0,-14,-11" Fill="{DynamicResource Accent}" Visibility="Collapsed"/>
                 <Grid>
                   <Grid.ColumnDefinitions><ColumnDefinition Width="44"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                  <Button x:Name="AddNx" Grid.Column="2" Visibility="Collapsed" Content="+ Далее" Style="{StaticResource Flat}" FontSize="15" Padding="12,4" Margin="4,0,8,0" VerticalAlignment="Center" ToolTip="Играть следующим" Click="AddNext_Click"/>
+                  <Button x:Name="AddNx" Grid.Column="2" Visibility="Collapsed" Content="+ Далее" Style="{StaticResource Flat}" FontSize="16" Padding="14,7" Margin="4,0,8,0" VerticalAlignment="Center" ToolTip="Играть следующим" Click="AddNext_Click"/>
                   <Border x:Name="NxB" Grid.Column="2" Visibility="Collapsed" Background="{DynamicResource AccentDim}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="10" Padding="10,2" Margin="8,0,4,0" VerticalAlignment="Center">
                     <TextBlock Text="{Binding NextBadge}" Foreground="{DynamicResource Accent}" FontSize="14" FontWeight="SemiBold"/>
                   </Border>
@@ -76,7 +76,7 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="B" Property="Background" Value="{DynamicResource Panel}"/><Setter TargetName="AddNx" Property="Visibility" Value="Visible"/></Trigger>
-              <Trigger Property="IsSelected" Value="True"><Setter TargetName="B" Property="Background" Value="{DynamicResource Panel2}"/></Trigger>
+              <Trigger Property="IsSelected" Value="True"><Setter TargetName="B" Property="Background" Value="{DynamicResource Hover}"/><Setter TargetName="B" Property="BorderBrush" Value="{DynamicResource SelBorder}"/><Setter TargetName="AddNx" Property="Visibility" Value="Visible"/></Trigger>
               <Trigger Property="Tag" Value="above"><Setter TargetName="LineTop" Property="Visibility" Value="Visible"/></Trigger>
               <Trigger Property="Tag" Value="below"><Setter TargetName="LineBottom" Property="Visibility" Value="Visible"/></Trigger>
               <DataTrigger Binding="{Binding HasNext}" Value="True"><Setter TargetName="NxB" Property="Visibility" Value="Visible"/><Setter TargetName="AddNx" Property="Visibility" Value="Collapsed"/></DataTrigger>
@@ -110,7 +110,7 @@
                 <Rectangle x:Name="LineBottom" Height="3" VerticalAlignment="Bottom" Margin="-6,0,-6,-9" Fill="{DynamicResource Accent}" Visibility="Collapsed"/>
                 <Grid>
                   <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                  <Button x:Name="AddNx" Grid.Column="2" Visibility="Collapsed" Content="+ Далее" Style="{StaticResource Flat}" FontSize="15" Padding="12,4" Margin="4,0,8,0" VerticalAlignment="Center" ToolTip="Играть следующим" Click="AddNext_Click"/>
+                  <Button x:Name="AddNx" Grid.Column="2" Visibility="Collapsed" Content="+ Далее" Style="{StaticResource Flat}" FontSize="16" Padding="14,7" Margin="4,0,8,0" VerticalAlignment="Center" ToolTip="Играть следующим" Click="AddNext_Click"/>
                   <Border x:Name="NxB" Grid.Column="2" Visibility="Collapsed" Background="{DynamicResource AccentDim}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="12" Padding="12,4" Margin="4,0,8,0" VerticalAlignment="Center">
                     <TextBlock Text="{Binding NextBadge}" Foreground="{DynamicResource Accent}" FontSize="16" FontWeight="SemiBold"/>
                   </Border>
@@ -409,14 +409,17 @@
         <Border x:Name="TrimBar" Visibility="Collapsed" Margin="0,12,0,0" Background="{DynamicResource AccentDim}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="16" Padding="12,6">
           <DockPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-              <Button Style="{StaticResource Flat}" Content="Приблизить" FontSize="16" Padding="14,10" Margin="0,0,8,0" Click="ZoomIn_Click" ToolTip="Показать волну крупнее (колесо мыши по приближенной волне)"/>
-              <Button Style="{StaticResource Flat}" Content="Отдалить" FontSize="16" Padding="14,10" Margin="0,0,14,0" Click="ZoomOut_Click" ToolTip="Показать больший кусок трека"/>
-              <Button Style="{StaticResource Flat}" Content="Начало" FontSize="17" Padding="18,10" Margin="0,0,8,0" Click="TrimStart_Click" ToolTip="Поставить начало трека в этом месте"/>
-              <Button Style="{StaticResource Flat}" Content="Конец" FontSize="17" Padding="18,10" Margin="0,0,8,0" Click="TrimEnd_Click" ToolTip="Поставить конец трека в этом месте"/>
-              <Button Style="{StaticResource Flat}" Content="Сбросить обрезку" FontSize="16" Padding="14,10" Margin="0,0,8,0" Click="TrimReset_Click" ToolTip="Вернуть трек целиком"/>
-              <Button Style="{StaticResource AccentBtn}" Content="Готово" FontSize="17" Padding="20,10" Click="TrimDone_Click" ToolTip="Закончить обрезку: дальше трек играет от начала до конца"/>
+              <Button Style="{StaticResource Flat}" Background="{DynamicResource Hover}" Content="Приблизить" FontSize="16" Padding="14,10" Margin="0,0,8,0" Click="ZoomIn_Click" ToolTip="Показать волну крупнее (колесо мыши по приближенной волне)"/>
+              <Button Style="{StaticResource Flat}" Background="{DynamicResource Hover}" Content="Отдалить" FontSize="16" Padding="14,10" Margin="0,0,14,0" Click="ZoomOut_Click" ToolTip="Показать больший кусок трека"/>
+              <Button x:Name="StartBtn" Style="{StaticResource Flat}" Background="{DynamicResource AccentDim}" Content="Начало" FontSize="18" FontWeight="SemiBold" Padding="18,10" Margin="0,0,8,0" Click="TrimStart_Click" ToolTip="Поставить начало трека в этом месте"/>
+              <Button x:Name="EndBtn" Style="{StaticResource Flat}" Background="{DynamicResource AccentDim}" Content="Конец" FontSize="18" FontWeight="SemiBold" Padding="18,10" Margin="0,0,14,0" Click="TrimEnd_Click" ToolTip="Поставить конец трека в этом месте"/>
+              <Button Style="{StaticResource Flat}" Background="{DynamicResource Hover}" Content="Сбросить обрезку" FontSize="16" Padding="14,10" Margin="0,0,8,0" Click="TrimReset_Click" ToolTip="Вернуть трек целиком"/>
+              <Button Style="{StaticResource AccentBtn}" Content="Готово" FontSize="18" Padding="20,10" Click="TrimDone_Click" ToolTip="Закончить обрезку: дальше трек играет от начала до конца"/>
             </StackPanel>
-            <TextBlock x:Name="TrimHint" Foreground="{DynamicResource Text}" FontSize="15" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,14,0"/>
+            <Border Background="{DynamicResource Accent}" CornerRadius="12" Padding="14,7" VerticalAlignment="Center" HorizontalAlignment="Left">
+              <TextBlock Text="РЕЖИМ ОБРЕЗКИ" Foreground="{DynamicResource OnAccent}" FontSize="15" FontWeight="SemiBold"/>
+            </Border>
+            <TextBlock x:Name="TrimHint" Visibility="Collapsed"/>
           </DockPanel>
         </Border>
         <Border x:Name="ZoomBox" Visibility="Collapsed" Margin="0,8,0,0" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="16" Padding="6,4">

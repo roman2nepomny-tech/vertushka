@@ -422,14 +422,14 @@ public class WaveformControl : FrameworkElement
                 double tx = t / duration * w;
                 dc.DrawRectangle(muted, null, new Rect(Math.Min(tx, w - 1), H + 2, 1, 4));
                 var ft = Text(FmtT(t + timeOffset, step), 14, muted);
-                dc.DrawText(ft, new Point(Math.Clamp(tx - ft.Width / 2, 0, w - ft.Width), H + 6));
+                dc.DrawText(ft, new Point(Math.Clamp(tx - ft.Width / 2, 0, Math.Max(0, w - ft.Width)), H + 6));
             }
             // пузырёк у иглы: сколько прошло и сколько осталось
             if (showBubble)
             {
             double bp = progress * duration, ba = !trimEdit && trimA > 0 ? trimA : 0, bb = !trimEdit && trimB > 0 ? trimB : duration;
             var bt = Text($"{Fmt(Math.Max(0, bp - ba))}  ·  осталось {Fmt(Math.Max(0, bb - bp))}", 15, Theme.Get("OnAccent"), true);
-            double bw = bt.Width + 18, bx = Math.Clamp(nx - bw / 2, 2, w - bw - 2), by = H - 28;
+            double bw = bt.Width + 18, bx = Math.Clamp(nx - bw / 2, 2, Math.Max(2, w - bw - 2)), by = H - 28;
             dc.DrawRoundedRectangle(Played, null, new Rect(bx, by, bw, 24), 12, 12);
             dc.DrawText(bt, new Point(bx + 9, by + 12 - bt.Height / 2));
             }
