@@ -388,7 +388,7 @@
     </Grid>
     </Grid>
 
-    <Border Grid.Row="1" Padding="24,6,20,4" AllowDrop="True" Drop="Jingle_Drop" DragOver="TrackList_DragOver">
+    <Border x:Name="JingleRow" Grid.Row="1" Padding="24,6,20,4" AllowDrop="True" Drop="Jingle_Drop" DragOver="TrackList_DragOver">
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
           <TextBlock Text="&#xE767;" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="0,0,8,0" ToolTip="Громкость джинглов"/>
@@ -404,6 +404,18 @@
       <Grid>
       <Grid x:Name="FullPanel">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+
+        <Border x:Name="TrimBar" Grid.Row="0" Visibility="Collapsed" Margin="0,12,0,0" Background="{DynamicResource AccentDim}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="16" Padding="12,6">
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+              <Button Style="{StaticResource Flat}" Content="Начало" FontSize="17" Padding="18,10" Margin="0,0,8,0" Click="TrimStart_Click" ToolTip="Поставить начало трека в этом месте"/>
+              <Button Style="{StaticResource Flat}" Content="Конец" FontSize="17" Padding="18,10" Margin="0,0,8,0" Click="TrimEnd_Click" ToolTip="Поставить конец трека в этом месте"/>
+              <Button Style="{StaticResource Flat}" Content="Сбросить обрезку" FontSize="16" Padding="14,10" Margin="0,0,8,0" Click="TrimReset_Click" ToolTip="Вернуть трек целиком"/>
+              <Button Style="{StaticResource AccentBtn}" Content="Готово" FontSize="17" Padding="20,10" Click="TrimDone_Click" ToolTip="Закончить обрезку: дальше трек играет от начала до конца"/>
+            </StackPanel>
+            <TextBlock x:Name="TrimHint" Foreground="{DynamicResource Text}" FontSize="15" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,14,0"/>
+          </DockPanel>
+        </Border>
 
         <Border x:Name="FullWaveHost" Grid.Row="1" Margin="0,12,0,0">
           <v:WaveformControl x:Name="Wave" Height="112" ShowAxis="True" ToolTip="Нажмите на волну, чтобы перемотать"/>
@@ -423,6 +435,7 @@
           <TextBlock x:Name="StatusText" Grid.Column="1" Foreground="{DynamicResource Text}" FontSize="20" VerticalAlignment="Center" Margin="22,0" TextTrimming="CharacterEllipsis"/>
           <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
             <Button x:Name="PreviewBtn" Style="{StaticResource Flat}" Content="Послушать" FontSize="16" Padding="16,10" Margin="0,0,8,0" Click="Preview_Click" ToolTip="Послушать в наушниках то, что заиграет следующим (зал не слышит). Выход — в меню ⚙ → «Наушники»"/>
+            <Button x:Name="TrimBtn" Style="{StaticResource Flat}" Content="Обрезка" FontSize="16" Padding="16,10" Margin="0,0,8,0" Click="Trim_Click" ToolTip="Обрезка трека: включите трек, нажмите «Начало» и «Конец» там, где нужно. Файл не меняется"/>
             <Button Style="{StaticResource Flat}" Content="Метка" FontSize="16" Padding="16,10" Margin="0,0,8,0" Click="Cue_Click" ToolTip="Поставить метку в этом месте (до 4). Прыжок — F1…F4 или клик по флажку на волне, убрать — правый клик по флажку. Shift+F1…F4 — поставить на нужный номер"/>
             <Button Style="{StaticResource Flat}" Content="Свернуть плеер" FontSize="16" Padding="16,10" VerticalAlignment="Center" ToolTip="Свернуть плеер в узкую полосу, чтобы список треков был виден целиком (M)" Click="Collapse_Click"/>
           </StackPanel>

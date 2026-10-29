@@ -43,7 +43,6 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="ButtonBase">
-            <Grid>
             <Border x:Name="B" Background="{TemplateBinding Background}" BorderBrush="Transparent" BorderThickness="1.5" CornerRadius="16" Padding="{TemplateBinding Padding}">
               <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center">
                 <ContentPresenter.Resources>
@@ -51,24 +50,9 @@
                 </ContentPresenter.Resources>
               </ContentPresenter>
             </Border>
-              <Border x:Name="Shine" IsHitTestVisible="False" Visibility="Collapsed" CornerRadius="16" BorderThickness="1">
-                <Border.Background>
-                  <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Color="#77FFFFFF" Offset="0"/><GradientStop Color="#26FFFFFF" Offset="0.48"/>
-                    <GradientStop Color="#0F000000" Offset="0.5"/><GradientStop Color="#22000000" Offset="1"/>
-                  </LinearGradientBrush>
-                </Border.Background>
-                <Border.BorderBrush>
-                  <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Color="#AAFFFFFF" Offset="0"/><GradientStop Color="#18FFFFFF" Offset="1"/>
-                  </LinearGradientBrush>
-                </Border.BorderBrush>
-              </Border>
-            </Grid>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="B" Property="Background" Value="{DynamicResource Hover}"/></Trigger>
-              <Trigger Property="v:Glass.On" Value="True"><Setter TargetName="Shine" Property="Visibility" Value="Visible"/></Trigger>
-              <Trigger Property="p:ToggleButton.IsChecked" Value="True"><Setter TargetName="Shine" Property="Visibility" Value="Visible"/><Setter TargetName="B" Property="Background" Value="{DynamicResource AccentDim}"/><Setter TargetName="B" Property="BorderBrush" Value="{DynamicResource Accent}"/><Setter Property="Foreground" Value="{DynamicResource Accent}"/></Trigger>
+              <Trigger Property="p:ToggleButton.IsChecked" Value="True"><Setter TargetName="B" Property="Background" Value="{DynamicResource AccentDim}"/><Setter TargetName="B" Property="BorderBrush" Value="{DynamicResource Accent}"/><Setter Property="Foreground" Value="{DynamicResource Accent}"/></Trigger>
               <Trigger Property="IsEnabled" Value="False"><Setter TargetName="B" Property="Opacity" Value="0.4"/></Trigger>
               <Trigger Property="IsPressed" Value="True"><Setter TargetName="B" Property="Background" Value="{DynamicResource Accent}"/><Setter Property="Foreground" Value="{DynamicResource OnAccent}"/></Trigger>
             </ControlTemplate.Triggers>
@@ -86,24 +70,9 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="ButtonBase">
-            <Grid>
             <Border x:Name="B" Background="{TemplateBinding Background}" CornerRadius="16" Padding="{TemplateBinding Padding}">
               <TextBlock Text="{TemplateBinding Content}" FontFamily="{TemplateBinding FontFamily}" FontSize="{TemplateBinding FontSize}" FontWeight="{TemplateBinding FontWeight}" Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Border>
-              <Border x:Name="Shine" IsHitTestVisible="False" Visibility="Visible" CornerRadius="16" BorderThickness="1">
-                <Border.Background>
-                  <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Color="#77FFFFFF" Offset="0"/><GradientStop Color="#26FFFFFF" Offset="0.48"/>
-                    <GradientStop Color="#0F000000" Offset="0.5"/><GradientStop Color="#22000000" Offset="1"/>
-                  </LinearGradientBrush>
-                </Border.Background>
-                <Border.BorderBrush>
-                  <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Color="#AAFFFFFF" Offset="0"/><GradientStop Color="#18FFFFFF" Offset="1"/>
-                  </LinearGradientBrush>
-                </Border.BorderBrush>
-              </Border>
-            </Grid>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="B" Property="Opacity" Value="0.85"/></Trigger>
               <Trigger Property="IsPressed" Value="True"><Setter TargetName="B" Property="Opacity" Value="0.7"/></Trigger>
@@ -145,24 +114,9 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="ButtonBase">
-            <Grid>
             <Border x:Name="B" Background="{TemplateBinding Background}" CornerRadius="40">
               <TextBlock Text="{TemplateBinding Content}" FontFamily="{TemplateBinding FontFamily}" FontSize="{TemplateBinding FontSize}" Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Border>
-              <Border x:Name="Shine" IsHitTestVisible="False" Visibility="Visible" CornerRadius="40" BorderThickness="1">
-                <Border.Background>
-                  <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Color="#77FFFFFF" Offset="0"/><GradientStop Color="#26FFFFFF" Offset="0.48"/>
-                    <GradientStop Color="#0F000000" Offset="0.5"/><GradientStop Color="#22000000" Offset="1"/>
-                  </LinearGradientBrush>
-                </Border.Background>
-                <Border.BorderBrush>
-                  <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Color="#AAFFFFFF" Offset="0"/><GradientStop Color="#18FFFFFF" Offset="1"/>
-                  </LinearGradientBrush>
-                </Border.BorderBrush>
-              </Border>
-            </Grid>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="B" Property="Opacity" Value="0.85"/></Trigger>
             </ControlTemplate.Triggers>
@@ -265,7 +219,7 @@
         <Setter.Value>
           <ControlTemplate TargetType="MenuItem">
             <Grid>
-              <Border x:Name="B" CornerRadius="10" Padding="12,9" Background="Transparent">
+            <Border x:Name="B" CornerRadius="10" Padding="12,9" Background="Transparent">
                 <Grid>
                   <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                   <TextBlock x:Name="Chk" Text="&#x2713;" Foreground="{DynamicResource Accent}" Width="20" Visibility="Collapsed"/>

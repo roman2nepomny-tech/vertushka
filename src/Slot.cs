@@ -11,6 +11,7 @@ public class Slot : IDisposable
     public float Factor = 1f, Target = 1f, Step;
     public Action OnZero;
     public bool NextTriggered;
+    public double TrimStart = -1, TrimEnd = -1;   // обрезка (сек), -1 — не задана
     public bool FromNext;          // включён из списка «Далее»
     public volatile bool Ended;             // звук закончился (дошли до конца данных или устройство остановилось)
     public volatile Exception StopError;   // звуковое устройство остановилось с ошибкой (а не трек дошёл до конца)

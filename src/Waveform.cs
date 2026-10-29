@@ -149,6 +149,14 @@ public class WaveformControl : FrameworkElement
         return -1;
     }
 
+    double trimA = -1, trimB = -1; bool trimEdit;
+    // обрезка: вне меток затемнено, между метками ярче
+    public void SetTrim(double a, double b, bool edit)
+    {
+        if (trimA == a && trimB == b && trimEdit == edit) return;
+        trimA = a; trimB = b; trimEdit = edit; InvalidateVisual();
+    }
+
     double loopA = -1, loopB = -1;
     // петля: доли дорожки 0..1; -1 — петли нет
     public void SetLoop(double a, double b) { if (loopA == a && loopB == b) return; loopA = a; loopB = b; InvalidateVisual(); }
@@ -299,6 +307,34 @@ public class WaveformControl : FrameworkElement
             var lp = new SolidColorBrush(Color.FromArgb(0x55, ((SolidColorBrush)Played).Color.R, ((SolidColorBrush)Played).Color.G, ((SolidColorBrush)Played).Color.B));
             dc.DrawRoundedRectangle(lp, new Pen(Played, 1.5), new Rect(loopA * w, 0, Math.Max(3, (loopB - loopA) * w), H), 6, 6);
         }
+        // обрезка: затемняем всё вне меток «начало» и «конец», между ними подсвечиваем
+        if (duration > 1 && (trimA >= 0 || trimB > 0))
+        {
+            double x1 = trimA >= 0 ? Math.Min(w, trimA / duration * w) : 0;
+            double x2 = trimB > 0 ? Math.Min(w, trimB / duration * w) : w;
+            var dim = new SolidColorBrush(Color.FromArgb((byte)(Theme.IsLight ? 0x99 : 0xBB), 0x08, 0x0A, 0x0E));
+            if (x1 > 0) dc.DrawRectangle(dim, null, new Rect(0, 0, x1, H));
+            if (x2 < w) dc.DrawRectangle(dim, null, new Rect(x2, 0, w - x2, H));
+            if (Theme.Get("Accent") is SolidColorBrush ab)
+                dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x2A, ab.Color.R, ab.Color.G, ab.Color.B)), null, new Rect(x1, 0, Math.Max(0, x2 - x1), H));
+            if (trimA >= 0) dc.DrawLine(new Pen(Theme.Get("Accent"), 3), new Point(x1, 0), new Point(x1, H));
+            if (trimB > 0) dc.DrawLine(new Pen(Theme.Get("RecText"), 3), new Point(x2, 0), new Point(x2, H));
+            if (axis)
+            {
+                if (trimA >= 0)
+                {
+                    dc.DrawRoundedRectangle(Theme.Get("Accent"), null, new Rect(x1, 0, 82, 22), 7, 7);
+                    var st = Text("НАЧАЛО", 13, Theme.Get("OnAccent"), true);
+                    dc.DrawText(st, new Point(x1 + 41 - st.Width / 2, 11 - st.Height / 2));
+                }
+                if (trimB > 0)
+                {
+                    dc.DrawRoundedRectangle(Theme.Get("RecText"), null, new Rect(x2 - 70, 0, 70, 22), 7, 7);
+                    var et = Text("КОНЕЦ", 13, Theme.Get("OnAccent"), true);
+                    dc.DrawText(et, new Point(x2 - 35 - et.Width / 2, 11 - et.Height / 2));
+                }
+            }
+        }
         // метки: тонкая линия на всю высоту и флажок с номером
         if (cues != null && duration > 1)
             for (int i = 0; i < cues.Length; i++)
@@ -341,7 +377,8 @@ public class WaveformControl : FrameworkElement
                 dc.DrawText(ft, new Point(Math.Clamp(tx - ft.Width / 2, 0, w - ft.Width), H + 6));
             }
             // пузырёк у иглы: сколько прошло и сколько осталось
-            var bt = Text($"{Fmt(progress * duration)}  ·  осталось {Fmt((1 - progress) * duration)}", 15, Theme.Get("OnAccent"), true);
+            double bp = progress * duration, ba = !trimEdit && trimA > 0 ? trimA : 0, bb = !trimEdit && trimB > 0 ? trimB : duration;
+            var bt = Text($"{Fmt(Math.Max(0, bp - ba))}  ·  осталось {Fmt(Math.Max(0, bb - bp))}", 15, Theme.Get("OnAccent"), true);
             double bw = bt.Width + 18, bx = Math.Clamp(nx - bw / 2, 2, w - bw - 2), by = H - 28;
             dc.DrawRoundedRectangle(Played, null, new Rect(bx, by, bw, 24), 12, 12);
             dc.DrawText(bt, new Point(bx + 9, by + 12 - bt.Height / 2));
