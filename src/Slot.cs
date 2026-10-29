@@ -24,7 +24,7 @@ public class Slot : IDisposable
         Reader = new AudioFileReader(song.Path) { Volume = 0f }; // тихо, пока не выставлена громкость (иначе первые доли секунды играют на полную)
         try
         {
-            Out = new WaveOutEvent { DesiredLatency = 120 };
+            Out = new WaveOutEvent { DesiredLatency = 300, NumberOfBuffers = 3 }; // запас на «икоту» Windows при открытии блютуз-устройств (120 мс было мало)
             locked = new LockedWave(Reader, gate);
             Out.Init(locked);
             Out.PlaybackStopped += (s, e) => { StopError = e.Exception; Ended = true; };

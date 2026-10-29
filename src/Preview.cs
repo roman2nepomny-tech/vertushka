@@ -36,7 +36,7 @@ public sealed class Preview : IDisposable
         try
         {
             reader = new AudioFileReader(path) { Volume = Math.Clamp(volume, 0f, 1f) };
-            var o = new WaveOutEvent { DeviceNumber = device, DesiredLatency = 150 };
+            var o = new WaveOutEvent { DeviceNumber = device, DesiredLatency = 300, NumberOfBuffers = 3 };
             output = o;
             o.Init(reader);
             // события от прежнего (уже остановленного) вывода игнорируем
